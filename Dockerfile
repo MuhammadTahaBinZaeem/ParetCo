@@ -22,6 +22,7 @@ COPY server.js ./
 COPY server/ ./server/
 COPY ui/ ./ui/
 COPY ai_features/ ./ai_features/
+COPY tests/server_modules.test.js ./tests/server_modules.test.js
 
 # Catch JavaScript syntax/integration mistakes during image build, before Render
 # ever tries to start the service.
