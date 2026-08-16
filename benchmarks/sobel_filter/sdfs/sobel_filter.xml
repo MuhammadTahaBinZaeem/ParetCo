@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<applicationGraph name="SobelFilter">
+  <sdf>
+    <actor name="src" type="image_source">
+      <port name="out" type="out" rate="1"/>
+    </actor>
+    <actor name="gx" type="filter_gx">
+      <port name="in" type="in" rate="1"/>
+      <port name="out" type="out" rate="1"/>
+    </actor>
+    <actor name="gy" type="filter_gy">
+      <port name="in" type="in" rate="1"/>
+      <port name="out" type="out" rate="1"/>
+    </actor>
+    <actor name="magnitude" type="calc_magnitude">
+      <port name="in_x" type="in" rate="1"/>
+      <port name="in_y" type="in" rate="1"/>
+      <port name="out" type="out" rate="1"/>
+    </actor>
+    <actor name="display" type="display_sink">
+      <port name="in" type="in" rate="1"/>
+    </actor>
+    <channel name="ch_src_gx" srcActor="src" srcPort="out" dstActor="gx" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch_src_gy" srcActor="src" srcPort="out" dstActor="gy" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch_gx_mag" srcActor="gx" srcPort="out" dstActor="magnitude" dstPort="in_x" initialTokens="0" size="1"/>
+    <channel name="ch_gy_mag" srcActor="gy" srcPort="out" dstActor="magnitude" dstPort="in_y" initialTokens="0" size="1"/>
+    <channel name="ch_mag_disp" srcActor="magnitude" srcPort="out" dstActor="display" dstPort="in" initialTokens="0" size="1"/>
+  </sdf>
+</applicationGraph>
