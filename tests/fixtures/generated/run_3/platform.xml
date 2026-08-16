@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<platform xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><processor name="pe_0" type="arm" memory="2048" /><processor name="pe_1" type="arm" memory="2048" /><processor name="pe_2" type="arm" memory="2048" /></platform>
