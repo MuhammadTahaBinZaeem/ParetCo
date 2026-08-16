@@ -473,3 +473,56 @@
           <div class="card" style="margin-top: 16px;">
             <div class="card-header"><h2>Solution Inspector</h2></div>
             <div class="card-body" id="pareto-detail"></div>
+          </div>
+          <div class="card" style="margin-top: 16px;">
+            <div class="card-body" id="pareto-sensitivity"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ CONTINUOUS DSE ══════════ -->
+    <section class="page" id="page-continuous-dse">
+      <div id="dse-status-banner"></div>
+      <div class="dse-layout">
+        <div class="dse-main">
+          <div class="card">
+            <div class="card-header"><h2>📅 Session Timeline</h2></div>
+            <div class="card-body" id="dse-timeline"></div>
+          </div>
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header"><h2>🔄 Delta Analysis</h2></div>
+            <div class="card-body" id="dse-delta"></div>
+          </div>
+        </div>
+        <div class="dse-sidebar">
+          <div class="card">
+            <div class="card-body" id="dse-sessions"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Hidden file inputs -->
+  <input type="file" id="file-config" accept=".cfg" class="hidden">
+  <input type="file" id="file-platform" accept=".xml" class="hidden">
+  <input type="file" id="file-sdf" accept=".xml" class="hidden">
+  <input type="file" id="file-wcet" accept=".xml" class="hidden">
+  <input type="file" id="file-constraints" accept=".xml" class="hidden">
+  <input type="file" id="file-results" accept=".txt,.csv" class="hidden">
+
+  <div class="toast-container" id="toast-container"></div>
+  <script src="arch_engine.js"></script>
+  <script src="pareto_engine.js"></script>
+  <script src="dse_engine.js"></script>
+  <script src="unsat_engine.js"></script>
+  <script src="analytical_engine.js"></script>
+  <script src="advanced_algorithms.js"></script>
+  <script src="system_profiler.js"></script>
+  <script src="architecture_studio.js"></script>
+  <script src="pareto_frontier.js"></script>
+  <script src="incremental_dse.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
