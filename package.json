@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js && node --check server/engine_bridge.js && node --check server/serializers.js && node --check server/validation.js && node --check server/ai_routes.js && node --check server/http_utils.js && node --check server/static_files.js && node --check ai_features/native_verify.js && node --check ai_features/auto_optimize.js && node --check ai_features/unsat_doctor.js && node --check ai_features/nl_to_model.js && node --check ui/app.js && node --check ui/runtime_fixes.js && node --check ui/advanced_algorithms.js && node --check ui/architecture_studio.js && node --check ui/pareto_frontier.js && node --check ui/incremental_dse.js",
+    "check": "node --check server.js && node --check server/engine_bridge.js && node --check server/serializers.js && node --check server/validation.js && node --check server/ai_routes.js && node --check server/http_utils.js && node --check server/static_files.js && node --check ai_features/native_verify.js && node --check ai_features/auto_optimize.js && node --check ai_features/unsat_doctor.js && node --check ai_features/nl_to_model.js && node --check ui/app.js && node --check ui/runtime_fixes.js && node --check ui/advanced_algorithms.js && node --check ui/architecture_studio.js && node --check ui/pareto_frontier.js && node --check ui/incremental_dse.js && node --test tests/server_modules.test.js",
     "test": "python tests/run_30_tests.py",
-    "test:smoke": "python tests/run_30_tests.py 1,2,3"
+    "test:smoke": "python tests/run_30_tests.py 1,2,3",
+    "test:modules": "node --test tests/server_modules.test.js"
   },
   "keywords": [
     "design-space-exploration",
