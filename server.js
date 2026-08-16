@@ -570,3 +570,74 @@ async function handleLaunchRequest(req, res, body) {
           const periodsFound = [...outTxt.matchAll(/Period:\s*\{?(\d+)\}?/gi)].map(m => parseInt(m[1], 10));
           const validPeriods = periodsFound.filter(p => p <= minAllowedPeriod);
           if (periodsFound.length > 0 && validPeriods.length === 0) {
+            solutionsViolated = true;
+            violationMsg += ` * WARN: Infeasible problem: 0 solutions satisfied period deadline of ${minAllowedPeriod} cycles.\n`;
+          }
+        }
+
+        if (isFinite(maxAllowedPower)) {
+          const powersFound = [...outTxt.matchAll(/sys power(?:\s*\(only used parts\))?:\s*(\d+(?:\.\d+)?)/gi)].map(m => parseFloat(m[1]));
+          const validPowers = powersFound.filter(p => p <= maxAllowedPower);
+          if (powersFound.length > 0 && validPowers.length === 0) {
+            solutionsViolated = true;
+            violationMsg += ` * WARN: Infeasible problem: 0 solutions satisfied Max Power limit of ${maxAllowedPower} mW (minimum observed: ${Math.min(...powersFound)} mW).\n`;
+          }
+        }
+
+        if (solutionsViolated) {
+          outTxt = 'ParetoCo - Design Space Exploration Engine\n';
+          outTxt += ' * INFO: Constraint Verification Failed\n';
+          outTxt += violationMsg;
+          outTxt += '===== search ended after: 0 s =====\n';
+          outTxt += '0 solutions found\n';
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          engine: nativeEngineLabel(nativeEngine),
+          log: stdout || outTxt,
+          outTxt,
+          outCsv
+        }));
+      } else {
+        if (requireNative) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            engine: nativeEngineLabel(nativeEngine),
+            exitCode: code,
+            error: 'Native ParetoCo engine returned a non-zero exit code.',
+            stdout,
+            stderr
+          }));
+        } else {
+          const fallback = runAnalyticalDseFallback(jobData);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(fallback));
+        }
+      }
+    });
+
+    child.on('error', (err) => {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
+      if (requireNative) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: false,
+          engine: nativeEngineLabel(nativeEngine),
+          error: `Failed to launch native engine: ${err.message}`
+        }));
+      } else {
+        const fallback = runAnalyticalDseFallback(jobData);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(fallback));
+      }
+    });
+
+  } catch (err) {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
+    if (requireNative) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    } else {
