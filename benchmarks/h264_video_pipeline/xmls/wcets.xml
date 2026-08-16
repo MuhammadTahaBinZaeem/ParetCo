@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wcets>
+  <mapping task_type="nal_parser"><wcet processor="ARM_Big" mode="default" wcet="30"/><wcet processor="ARM_LITTLE" mode="default" wcet="60"/></mapping>
+  <mapping task_type="idct_transform"><wcet processor="ARM_Big" mode="default" wcet="45"/><wcet processor="ARM_LITTLE" mode="default" wcet="110"/></mapping>
+  <mapping task_type="motion_comp"><wcet processor="ARM_Big" mode="default" wcet="60"/><wcet processor="ARM_LITTLE" mode="default" wcet="140"/></mapping>
+  <mapping task_type="deblocking_filter"><wcet processor="ARM_Big" mode="default" wcet="35"/><wcet processor="ARM_LITTLE" mode="default" wcet="80"/></mapping>
+  <mapping task_type="frame_render"><wcet processor="ARM_Big" mode="default" wcet="20"/><wcet processor="ARM_LITTLE" mode="default" wcet="40"/></mapping>
+</wcets>
