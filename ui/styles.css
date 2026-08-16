@@ -756,3 +756,129 @@ pre {
   letter-spacing: 0.06em;
   margin-bottom: 10px;
 }
+
+.studio-center {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.studio-toolbar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: var(--bg-surface);
+}
+
+.studio-zoom-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.studio-canvas,
+#sdf-canvas,
+#results-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#pareto-scatter-canvas {
+  width: 100%;
+  height: 420px;
+  min-height: 420px;
+  display: block;
+  cursor: crosshair;
+}
+
+#pareto-pc-canvas {
+  width: 100%;
+  height: 280px;
+  min-height: 280px;
+  display: block;
+}
+
+/* ── Pareto Explorer Layout ─────────────────────────────────── */
+.pareto-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.pareto-dims {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Continuous DSE Layout ──────────────────────────────────── */
+.dse-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.ws-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.ws-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ws-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.session-item {
+  padding: 12px 14px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 8px;
+}
+
+.session-item:hover {
+  border-color: var(--border-focus);
+  background-color: var(--bg-subtle);
+}
+
+.session-item.active {
+  border-color: var(--border-focus);
+  background-color: var(--nav-active-bg);
+}
+
+/* ── Toast Notifications ────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+}
+
