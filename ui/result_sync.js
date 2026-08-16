@@ -85,33 +85,36 @@
     return `${count} solution${count === 1 ? '' : 's'} found`;
   }
 
-  function normalizeResultState(text) {
-    const count = nativeSolutionCount(text);
-    const fallbackRows = parseNativeRows(text);
+  function normalizeResultState(text, filename) {
+    const isCsv = String(filename || '').toLowerCase().endsWith('.csv');
+    const fallbackRows = isCsv ? [] : parseNativeRows(text);
+    const count = isCsv
+      ? (Array.isArray(state.results?.rows) ? state.results.rows.length : 0)
+      : nativeSolutionCount(text);
 
     if (!state.results) {
       state.results = {
         headers: HEADERS.slice(),
         rows: fallbackRows,
         raw: String(text || ''),
-        summary: { solutions: formatCount(count), time: searchTime(text) }
+        summary: { solutions: formatCount(count), time: isCsv ? '—' : searchTime(text) }
       };
     } else {
-      if ((!Array.isArray(state.results.rows) || state.results.rows.length === 0) && fallbackRows.length) {
+      if (!isCsv && (!Array.isArray(state.results.rows) || state.results.rows.length === 0) && fallbackRows.length) {
         state.results.headers = HEADERS.slice();
         state.results.rows = fallbackRows;
       }
       state.results.raw = String(text || state.results.raw || '');
       state.results.summary = state.results.summary || {};
       state.results.summary.solutions = formatCount(count);
-      if (!state.results.summary.time || state.results.summary.time === '< 1s') {
+      if (!isCsv && (!state.results.summary.time || state.results.summary.time === '< 1s')) {
         state.results.summary.time = searchTime(text);
       }
     }
 
     // A successful native output containing explicit solution blocks is
     // authoritative. Never leave the state saying UNSAT when rows exist.
-    if (fallbackRows.length && state.results.rows.length === 0) {
+    if (!isCsv && fallbackRows.length && state.results.rows.length === 0) {
       state.results.rows = fallbackRows;
       state.results.headers = HEADERS.slice();
     }
@@ -238,8 +241,8 @@
     ctx.fillText('Native period (cycles)', left + chartW / 2, cssHeight - 8);
   }
 
-  function refreshAllResultViews(text) {
-    const count = normalizeResultState(text);
+  function refreshAllResultViews(text, filename = 'out.txt') {
+    const count = normalizeResultState(text, filename);
     rebuildSummary(count);
     rebuildResultTable();
     drawPeriodChart();
@@ -264,13 +267,35 @@
     // Fix the legacy sentinel bug before its parser evaluates constraints.
     clearInactiveSentinels();
     originalLoadResults(text, filename);
-    refreshAllResultViews(text);
+    refreshAllResultViews(text, filename);
   };
+
+  function installResultFileImportBridge() {
+    const button = document.getElementById('btn-load-results');
+    const input = document.getElementById('file-results');
+    if (!button || !input) return;
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      input.value = '';
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => api.loadResults(String(reader.result || ''), file.name || 'out.txt');
+        reader.onerror = () => api.toast?.('Could not read the selected result file.', 'error');
+        reader.readAsText(file);
+      };
+      input.click();
+    }, { capture: true });
+  }
+
+  installResultFileImportBridge();
 
   // If a page was restored from localStorage with existing results, reconcile
   // the visible cards once on load as well.
   if (state.results?.raw) {
     clearInactiveSentinels();
-    refreshAllResultViews(state.results.raw);
+    refreshAllResultViews(state.results.raw, 'out.txt');
   }
 })();
