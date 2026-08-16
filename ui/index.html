@@ -1,0 +1,52 @@
+<!-- ParetoCo Design Space Explorer UI
+     Created on: Aug 15, 2026
+     Author: Lameea
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ParetoCo — Pareto-Optimal Design Space Explorer</title>
+  <meta name="description" content="ParetoCo — configure, launch, and visualize constraint-based hardware/software mapping optimizations.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="img/logo.png">
+  <link rel="apple-touch-icon" href="img/logo.png">
+</head>
+<body>
+  <div class="mesh-bg">
+    <div class="mesh-blob b1"></div>
+    <div class="mesh-blob b2"></div>
+    <div class="mesh-blob b3"></div>
+  </div>
+  <!-- ════════════════════ SIDEBAR ════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo-wrapper">
+        <img src="img/logo.png" alt="ParetoCo Logo" class="brand-logo">
+      </div>
+      <div>
+        <div class="brand-name">ParetoCo</div>
+        <div class="brand-sub">Design Space Explorer</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <a href="#" class="nav-item active" data-page="dashboard" id="nav-dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="platform" id="nav-platform">
+        <span class="nav-icon">🖥️</span> Platform
+      </a>
+      <a href="#" class="nav-item" data-page="applications" id="nav-applications">
+        <span class="nav-icon">📐</span> Applications
+      </a>
+      <a href="#" class="nav-item" data-page="constraints" id="nav-constraints">
+        <span class="nav-icon">⚙️</span> Constraints
+      </a>
+
+      <div class="nav-section-label">Exploration</div>
