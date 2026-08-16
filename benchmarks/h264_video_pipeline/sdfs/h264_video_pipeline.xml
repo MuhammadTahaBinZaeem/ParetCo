@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<applicationGraph name="H264Decoder">
+  <sdf>
+    <actor name="parser" type="nal_parser"><port name="out" type="out" rate="1"/></actor>
+    <actor name="idct" type="idct_transform"><port name="in" type="in" rate="1"/><port name="out" type="out" rate="1"/></actor>
+    <actor name="motion_comp" type="motion_comp"><port name="in" type="in" rate="1"/><port name="out" type="out" rate="1"/></actor>
+    <actor name="deblock" type="deblocking_filter"><port name="in" type="in" rate="1"/><port name="out" type="out" rate="1"/></actor>
+    <actor name="sink" type="frame_render"><port name="in" type="in" rate="1"/></actor>
+    <channel name="ch1" srcActor="parser" srcPort="out" dstActor="idct" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch2" srcActor="idct" srcPort="out" dstActor="motion_comp" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch3" srcActor="motion_comp" srcPort="out" dstActor="deblock" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch4" srcActor="deblock" srcPort="out" dstActor="sink" dstPort="in" initialTokens="0" size="1"/>
+  </sdf>
+</applicationGraph>
