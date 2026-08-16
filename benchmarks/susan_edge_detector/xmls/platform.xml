@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<platform name="Hetero_QuadCore">
+  <processor model="ARM_A7" number="2">
+    <mode name="default" cycle="1" mem="16384" dynPower="20" staticPower="3" area="8" monetary="15"/>
+  </processor>
+  <processor model="DSP_Core" number="2">
+    <mode name="default" cycle="1" mem="8192" dynPower="10" staticPower="2" area="5" monetary="18"/>
+  </processor>
+  <TDN_NoC name="noc0" topology="2D-mesh" x-dimension="2" y-dimension="2" flitSize="32" cycles="1"/>
+</platform>
