@@ -365,3 +365,64 @@ The included `render.yaml` is a Render Blueprint for this Docker deployment.
 6. Verify `/healthz` and `/api/status` after deployment.
 
 A healthy Render deployment should report a native engine similar to:
+
+```json
+{
+  "status": "ready",
+  "nativeRequired": true,
+  "nativeEngine": "paretoco-engine.exe via wine",
+  "executionMode": "wine"
+}
+```
+
+If Wine or the executable is unavailable, the production health endpoint returns an error instead of disguising the failure with a fallback solver.
+
+---
+
+# Native 30-Run Regression Suite
+
+The new regression suite is wired directly to the packaged executable:
+
+```bash
+python tests/run_30_tests.py
+```
+
+Run selected cases:
+
+```bash
+python tests/run_30_tests.py 1,2,3
+```
+
+Or through npm:
+
+```bash
+npm test
+npm run test:smoke
+```
+
+### What the runner does
+
+- resolves `paretoco-engine-release/paretoco-engine.exe`
+- launches it directly on Windows
+- launches the **same executable through Wine** on Linux
+- runs from each fixture directory so relative SDF/platform paths remain valid
+- invokes the engine with `--config config.cfg`
+- compares exit status and solution count with `tests/expected_30.json`
+- allows historical timeout cases either to time out again or to complete successfully with the expected result
+- writes a machine-readable `tests/run_30_results.json` report
+
+Override the engine or Wine executable if required:
+
+```bash
+PARETOCO_ENGINE=/path/to/paretoco-engine.exe python tests/run_30_tests.py
+PARETOCO_WINE=/usr/bin/wine python tests/run_30_tests.py
+```
+
+Only the 30 fixture directories required by this suite are retained; the unused generated runs from the previous repository were removed.
+
+---
+
+# API
+
+| Endpoint | Method | Purpose |
+|---|---:|---|
