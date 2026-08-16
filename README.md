@@ -120,3 +120,64 @@ ParetoCo tracks how architecture or workload edits affect previous exploration r
 - LRU-style session retention
 
 ## 5. SDF and Throughput Analytics
+
+`ui/analytical_engine.js` provides compact analytical components for fast inspection:
+
+- Maximum Cycle Ratio analysis using a Howard-style policy-iteration approach
+- critical-cycle identification
+- throughput estimation from the cycle ratio
+- self-timed SDF-style execution simulation
+- token-state evolution
+- actor firing/event traces
+- average simulated iteration period
+
+## 6. Architecture and Graph Algorithms
+
+`ui/arch_engine.js` includes reusable architecture-analysis primitives:
+
+- directed graph representation
+- Tarjan strongly connected components
+- simple-cycle discovery
+- topological sorting
+- Dijkstra shortest paths
+- Floyd-Warshall all-pairs shortest paths
+- Dinic maximum flow
+- disjoint-set union
+- critical-path / schedule-float analysis
+- mesh NoC generation
+- XY routing
+- NoC link utilization and saturation analysis
+- steady-state thermal estimation
+- DVFS operating-point curve estimation
+- L1/L2 cache hierarchy simulation
+- TDMA slot allocation
+
+## 7. Advanced Optimization and System Analysis
+
+`ui/advanced_algorithms.js` adds higher-level computational analysis:
+
+- DVFS energy / energy-delay optimization
+- DVFS transition-overhead estimation
+- scratchpad-memory allocation
+- NUMA/bank-contention estimation
+- fixed-priority response-time analysis
+- real-time schedulability checks
+- task reliability estimation
+- primary/backup scheduling support
+- system MTTF estimation
+- SPEA2 fitness calculation
+- inverted generational distance (IGD)
+- NoC wormhole/virtual-channel contention simulation
+- simplex-based exact optimization primitive
+
+## 8. System Profiler
+
+`ui/system_profiler.js` provides:
+
+- transient thermal simulation using RK4 integration
+- communication-vs-computation roofline/bottleneck analysis
+- critical-cycle slack and schedule-float analysis
+- MESI-style cache-coherence simulation
+- snooping/bus transaction accounting
+- invalidation and coherence-overhead metrics
+
