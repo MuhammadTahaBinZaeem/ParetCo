@@ -50,3 +50,56 @@
       </a>
 
       <div class="nav-section-label">Exploration</div>
+      <a href="#" class="nav-item" data-page="explorer" id="nav-explorer">
+        <span class="nav-icon">🔧</span> DSE Config
+      </a>
+      <a href="#" class="nav-item" data-page="results" id="nav-results">
+        <span class="nav-icon">📈</span> Results
+      </a>
+
+      <div class="nav-section-label">Studio</div>
+      <a href="#" class="nav-item" data-page="arch-studio" id="nav-arch-studio">
+        <span class="nav-icon">🏗️</span> Architecture Studio
+      </a>
+      <a href="#" class="nav-item" data-page="pareto-explorer" id="nav-pareto-explorer">
+        <span class="nav-icon">📊</span> Pareto Explorer
+      </a>
+      <a href="#" class="nav-item" data-page="continuous-dse" id="nav-continuous-dse">
+        <span class="nav-icon">🔄</span> Continuous DSE
+      </a>
+
+      <div class="nav-section-label">AI Integration</div>
+      <a href="#" class="nav-item" data-page="ai-analyst" id="nav-ai">
+        <span class="nav-icon">🤖</span> AI Analyst
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="engine-status" id="engine-status">
+        <span class="status-dot idle"></span>
+        <span>Engine idle</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ════════════════════ MAIN ════════════════════ -->
+  <main class="main-content">
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <button class="menu-toggle" id="menu-toggle">☰</button>
+        <h1 class="page-title" id="page-title">Dashboard</h1>
+      </div>
+      <div class="top-bar-right">
+        <button class="btn btn-outline" id="btn-demo-preset" onclick="window.paretoco?.loadDemoPreset?.() || document.getElementById('btn-demo-preset')?.click()" title="Load Ready-to-Run Demo Benchmark">⚡ Load Demo</button>
+        <button class="btn btn-outline" id="btn-import-config" title="Import Configuration">↑ Import</button>
+        <button class="btn btn-primary" id="btn-launch" onclick="window.paretoco?.launchEngine?.()" title="Launch DSE Solver">▶ Launch DSE</button>
+      </div>
+    </header>
+
+    <!-- ══════════ DASHBOARD ══════════ -->
+    <section class="page active" id="page-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon kpi-coral" style="padding:0; overflow:hidden;">
+            <div class="img-container" style="display:flex; justify-content:center; align-items:center; width:36px; height:36px; border-radius:6px; overflow:hidden;">
+              <img src="img/icon-processors.jpg" alt="Processors" style="width:100%; height:100%; object-fit:cover; border-radius:6px;">
