@@ -377,3 +377,129 @@ img {
   border-radius: var(--radius);
   padding: 18px 20px;
   display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Solid Pastel Accents per specification */
+.kpi-card:nth-child(1),
+.kpi-coral,
+.kpi-processors {
+  background-color: var(--accent-processors) !important;
+}
+
+.kpi-card:nth-child(2),
+.kpi-blue,
+.kpi-applications {
+  background-color: var(--accent-applications) !important;
+}
+
+.kpi-card:nth-child(3),
+.kpi-green,
+.kpi-actors {
+  background-color: var(--accent-actors) !important;
+}
+
+.kpi-card:nth-child(4),
+.kpi-amber,
+.kpi-solutions {
+  background-color: var(--accent-solutions) !important;
+}
+
+.kpi-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--text-primary) !important;
+}
+
+.kpi-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+/* ── Grids & Layouts ────────────────────────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  line-height: 1.2;
+}
+
+.btn:hover {
+  background-color: var(--bg-subtle);
+  border-color: var(--border-focus);
+}
+
+.btn:active {
+  background-color: var(--nav-active-bg);
+}
+
+.btn-primary {
+  background-color: var(--nav-active-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  border-color: var(--border-focus);
+}
+
+.btn-outline {
+  background-color: var(--bg-surface);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-outline:hover {
+  background-color: var(--bg-subtle);
+  border-color: var(--border-focus);
