@@ -116,13 +116,14 @@
     const rows = Array.isArray(constraints) ? constraints : [];
     const sys = sysConstraints || {};
 
-    // These three attributes are true <= bounds in the existing DeSyDe/ParetoCo engine.
-    // Do not write utilization/procsUsed here: the native engine interprets utilization
-    // as a minimum and procsUsed as equality, while the UI labels them as maxima.
+    // Match the native engine semantics exactly: power/area/cost are maxima,
+    // utilization is a minimum percentage, and procsUsed is an exact count.
     const systemAttrs = [];
     if (positiveNumber(sys.power) > 0) systemAttrs.push(`power="${Math.round(Number(sys.power))}"`);
     if (positiveNumber(sys.area) > 0) systemAttrs.push(`area="${Math.round(Number(sys.area))}"`);
     if (positiveNumber(sys.cost) > 0) systemAttrs.push(`money="${Math.round(Number(sys.cost))}"`);
+    if (positiveNumber(sys.utilization) > 0) systemAttrs.push(`utilization="${Math.round(Number(sys.utilization))}"`);
+    if (positiveNumber(sys.procsUsed) > 0) systemAttrs.push(`procsUsed="${Math.round(Number(sys.procsUsed))}"`);
 
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<designConstraints>\n';
     if (rows.length) {
@@ -183,6 +184,10 @@
   };
 
   restoreSystemConstraintForm();
+  const utilizationLabel = document.querySelector('label[for="sys-utilization"]');
+  const procsLabel = document.querySelector('label[for="sys-procs"]');
+  if (utilizationLabel) utilizationLabel.textContent = 'Min Utilization (%)';
+  if (procsLabel) procsLabel.textContent = 'Active Processors (exact)';
 
   // Ensure a click captures the latest constraint values even if the user has not
   // blurred the input yet.
