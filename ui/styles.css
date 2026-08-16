@@ -1,5 +1,5 @@
 /* ParetoCo Design Space Explorer - "Soft Pastel Data" Flat Aesthetic
-   Strict No-Pure-White, Zero Gradients, Zero Drop-Shadows, 8px Radius Architecture
+   Pure-white app background, zero gradients, zero drop-shadows, 8px radius architecture
 */
 
 *,
@@ -11,7 +11,7 @@
 }
 
 :root {
-  --bg-app: #D4E4F7;
+  --bg-app: #FFFFFF;
   --bg-surface: #EBF4FA;
   --bg-subtle: #DDE9F5;
   --bg-input: #EBF4FA;

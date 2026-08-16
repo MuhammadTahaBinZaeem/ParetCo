@@ -508,7 +508,9 @@ async function handleLaunchRequest(req, res, body) {
     sdfFiles.forEach(sf => { configCfg += `inputs = ${sf}\n`; });
     configCfg += `inputs = platform.xml\ninputs = wcets.xml\n`;
     if (constraintsXml) {
-      configCfg += `inputs = desConst.xml\ndesign_constraints_file=desConst.xml\n`;
+      // The packaged engine accepts design constraints as an input file. The
+      // legacy design_constraints_file key is not part of this engine's CLI config parser.
+      configCfg += `inputs = desConst.xml\n`;
     }
     configCfg += `\n[dse]\nmodel = SDF_PR_ONLINE\ncriteria = ${dseCriteria}\nsearch = ${dseSearch}\nth_prop = ${dseProp}\n`;
     fs.writeFileSync(path.join(tempDir, 'config.cfg'), configCfg);
