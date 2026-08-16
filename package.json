@@ -1,18 +1,18 @@
 {
   "name": "paretoco",
-  "version": "2.1.0",
-  "description": "ParetoCo native/analytical design-space exploration, architecture analysis, and multi-objective optimization platform",
+  "version": "2.2.0",
+  "description": "ParetoCo native design-space exploration, architecture analysis, and multi-objective optimization platform",
   "main": "server.js",
   "scripts": {
-    "start": "node native_feature_bootstrap.js",
-    "dev": "node native_feature_bootstrap.js",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check server.js && node --check server/engine_bridge.js && node --check server/serializers.js && node --check server/validation.js && node --check server/ai_routes.js && node --check ai_features/native_verify.js && node --check ai_features/auto_optimize.js && node --check ai_features/unsat_doctor.js && node --check ai_features/nl_to_model.js",
     "test": "python tests/run_30_tests.py",
     "test:smoke": "python tests/run_30_tests.py 1,2,3"
   },
   "keywords": [
     "design-space-exploration",
     "pareto-optimization",
-    "computational-research",
     "embedded-systems",
     "mpsoC",
     "synchronous-dataflow",
