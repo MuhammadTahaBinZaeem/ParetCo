@@ -2,7 +2,7 @@
 
 /**
  * Native-feature integration layer.
- * Runs before the existing round5→round4→round3→round2→app/preflight chain.
+ * Runs before the round6→round5→round4→round3→round2→app/preflight chain.
  * It repairs only web/UI/AI integration; the packaged native engine is untouched.
  */
 const fs = require('fs');
@@ -128,4 +128,4 @@ patchFile('round2_preflight.js', source => {
   return source;
 });
 
-require('./round5_preflight');
+require('./round6_preflight');
