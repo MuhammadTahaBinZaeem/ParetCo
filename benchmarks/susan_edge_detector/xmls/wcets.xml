@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wcets>
+  <mapping task_type="get_image"><wcet processor="ARM_A7" mode="default" wcet="20"/><wcet processor="DSP_Core" mode="default" wcet="35"/></mapping>
+  <mapping task_type="susan_edges"><wcet processor="ARM_A7" mode="default" wcet="75"/><wcet processor="DSP_Core" mode="default" wcet="25"/></mapping>
+  <mapping task_type="susan_thin"><wcet processor="ARM_A7" mode="default" wcet="50"/><wcet processor="DSP_Core" mode="default" wcet="20"/></mapping>
+  <mapping task_type="draw_edges"><wcet processor="ARM_A7" mode="default" wcet="15"/><wcet processor="DSP_Core" mode="default" wcet="30"/></mapping>
+</wcets>
