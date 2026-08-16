@@ -262,3 +262,55 @@
             <tbody id="constraints-tbody"></tbody>
           </table>
           <div class="empty-state" id="constraints-empty"><p>No constraints defined.</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>System Constraints</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="sys-power">Max Power</label>
+              <input type="number" id="sys-power" placeholder="Unlimited" class="text-input">
+            </div>
+            <div class="form-group">
+              <label for="sys-utilization">Max Utilization (%)</label>
+              <input type="number" id="sys-utilization" placeholder="100" class="text-input">
+            </div>
+            <div class="form-group">
+              <label for="sys-area">Max Area</label>
+              <input type="number" id="sys-area" placeholder="Unlimited" class="text-input">
+            </div>
+            <div class="form-group">
+              <label for="sys-cost">Max Cost</label>
+              <input type="number" id="sys-cost" placeholder="Unlimited" class="text-input">
+            </div>
+            <div class="form-group">
+              <label for="sys-procs">Max Active Processors</label>
+              <input type="number" id="sys-procs" placeholder="Unlimited" class="text-input">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ DSE CONFIG ══════════ -->
+    <section class="page" id="page-explorer">
+      
+      <div class="two-col" style="margin-bottom: 16px;">
+        <div class="card">
+          <div class="card-header"><h2>🤖 AI Co-Pilot (NL-to-DSE)</h2></div>
+          <div class="card-body">
+            <div class="form-group">
+              <textarea id="ai-copilot-input" class="text-input" rows="4" placeholder="e.g. I have four ARM cores and two NPUs. The vision pipeline has preprocessing, detection and tracking. Detection must run on an NPU. Latency must remain below 33 ms and power below 12 W."></textarea>
+              <button class="btn btn-primary" id="btn-ai-copilot" style="margin-top: 12px;">✨ Generate DSE Model</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2>🚀 Autonomous Architecture Agent</h2></div>
+          <div class="card-body">
+            <div class="form-group">
+              <textarea id="ai-auto-opt-input" class="text-input" rows="4" placeholder="e.g. Find an architecture achieving >= 30 FPS, < 15 W and < $80 BOM. Optimize energy first and cost second."></textarea>
+              <button class="btn btn-primary" id="btn-ai-auto-opt" style="margin-top: 12px;">⚡ Auto-Optimize Architecture</button>
+            </div>
