@@ -19,6 +19,11 @@ function actorIdentity(actor) {
   };
 }
 
+function validNonNegative(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0;
+}
+
 function validateStructuredLaunchJob(job) {
   const errors = [];
   if (!job || typeof job !== 'object' || Array.isArray(job)) {
@@ -45,15 +50,44 @@ function validateStructuredLaunchJob(job) {
     const modeNames = new Set();
     modes.forEach((mode, modeIndex) => {
       const name = String(mode?.name || '').trim();
+      const prefix = `Processor ${model || '#' + (index + 1)} mode ${name || '#' + (modeIndex + 1)}`;
       if (!name) errors.push(`Processor ${model || '#' + (index + 1)} mode #${modeIndex + 1} has no name.`);
       else if (modeNames.has(name)) errors.push(`Processor ${model} contains duplicate mode “${name}”.`);
       else modeNames.add(name);
+      if (!(Number(mode?.cycle) > 0)) errors.push(`${prefix} cycle must be > 0.`);
+      if (!(Number(mode?.mem) > 0)) errors.push(`${prefix} memory must be > 0.`);
+      for (const field of ['dynPower', 'staticPower', 'area', 'monetary']) {
+        if (!validNonNegative(mode?.[field])) errors.push(`${prefix} ${field} must be a non-negative number.`);
+      }
     });
   });
+
+  const interconnects = Array.isArray(job.platform?.interconnects)
+    ? job.platform.interconnects
+    : (job.platform?.interconnect ? [job.platform.interconnect] : []);
+  if (interconnects.length !== 1) {
+    errors.push(`Exactly one interconnect is required by this packaged native model; received ${interconnects.length}.`);
+  } else {
+    const ic = interconnects[0] || {};
+    const topology = String(ic.topology || 'TDMA-bus').toLowerCase().replace(/[_\s]/g, '-');
+    if (!['tdma-bus', 'tdmabus'].includes(topology)) {
+      errors.push(`Unsupported interconnect topology “${ic.topology}”. This engine build currently serializes TDMA-bus only.`);
+    }
+    for (const [field, value] of [
+      ['xDim', ic.xDim ?? ic['x-dimension']],
+      ['yDim', ic.yDim ?? ic['y-dimension']],
+      ['flitSize', ic.flitSize],
+      ['slots', ic.slots ?? ic.tdma_slots]
+    ]) {
+      if (!(Number(value) > 0)) errors.push(`Interconnect ${field} must be > 0.`);
+    }
+    if (ic.maxSlotsPerProc !== undefined && !(Number(ic.maxSlotsPerProc) > 0)) errors.push('Interconnect maxSlotsPerProc must be > 0 when supplied.');
+  }
 
   const apps = Array.isArray(job.applications) ? job.applications : [];
   if (!apps.length) errors.push('At least one application is required.');
   const appNames = new Set();
+  const workspaceNames = new Set();
   const actorTypes = new Set();
 
   apps.forEach((app, appIndex) => {
@@ -61,6 +95,11 @@ function validateStructuredLaunchJob(job) {
     if (!appName) errors.push(`Application #${appIndex + 1} has no name.`);
     else if (appNames.has(appName)) errors.push(`Application name “${appName}” is duplicated.`);
     else appNames.add(appName);
+    if (appName) {
+      const workspaceName = appName.replace(/[^A-Za-z0-9._-]/g, '_');
+      if (workspaceNames.has(workspaceName)) errors.push(`Application name “${appName}” collides with another application after safe filename normalization.`);
+      workspaceNames.add(workspaceName);
+    }
 
     const actors = Array.isArray(app?.actors) ? app.actors : [];
     if (!actors.length) errors.push(`Application ${appName || '#' + (appIndex + 1)} has no actors.`);
@@ -82,8 +121,19 @@ function validateStructuredLaunchJob(job) {
           ...(Array.isArray(actor.outPorts) ? actor.outPorts.map(p => ({ ...p, type: 'out' })) : [])
         ];
       }
-      if (!ports.length) ports = [{ name: 'p_in', type: 'in' }, { name: 'p_out', type: 'out' }];
-      portMap.set(name, new Set(ports.map(p => String(p?.name || '')).filter(Boolean)));
+      if (!ports.length && typeof actor === 'string') ports = [{ name: 'p_in', type: 'in', rate: 1 }, { name: 'p_out', type: 'out', rate: 1 }];
+      if (!ports.length) errors.push(`Application ${appName} actor ${name || actorIndex + 1} has no ports.`);
+      const portNames = new Set();
+      for (const port of ports) {
+        const portName = String(port?.name || '').trim();
+        const portType = String(port?.type || '').toLowerCase();
+        if (!portName) errors.push(`Application ${appName} actor ${name} contains an unnamed port.`);
+        else if (portNames.has(portName)) errors.push(`Application ${appName} actor ${name} contains duplicate port “${portName}”.`);
+        else portNames.add(portName);
+        if (!['in', 'out'].includes(portType)) errors.push(`Application ${appName} actor ${name} port ${portName || '?'} must be type in or out.`);
+        if (!(Number(port?.rate ?? 1) > 0)) errors.push(`Application ${appName} actor ${name} port ${portName || '?'} rate must be > 0.`);
+      }
+      portMap.set(name, portNames);
     });
 
     (Array.isArray(app?.channels) ? app.channels : []).forEach((channel, channelIndex) => {
@@ -96,6 +146,10 @@ function validateStructuredLaunchJob(job) {
       if (!actorNames.has(dst)) errors.push(`Application ${appName} ${label} references unknown destination actor “${dst}”.`);
       if (actorNames.has(src) && !portMap.get(src)?.has(srcPort)) errors.push(`Application ${appName} ${label} references missing source port ${src}.${srcPort}.`);
       if (actorNames.has(dst) && !portMap.get(dst)?.has(dstPort)) errors.push(`Application ${appName} ${label} references missing destination port ${dst}.${dstPort}.`);
+      const initialTokens = Number(channel?.initialTokens ?? channel?.tokens ?? 0);
+      const size = Number(channel?.size ?? 1);
+      if (!Number.isInteger(initialTokens) || initialTokens < 0) errors.push(`Application ${appName} ${label} initialTokens must be a non-negative integer.`);
+      if (!Number.isInteger(size) || size < 1) errors.push(`Application ${appName} ${label} size must be a positive integer.`);
     });
   });
 
