@@ -15,19 +15,33 @@ function sendJson(res, statusCode, payload) {
 function readBody(req, limitBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let bytes = 0;
+    let tooLarge = false;
     const chunks = [];
+
     req.on('data', chunk => {
+      if (tooLarge) return;
       bytes += chunk.length;
       if (bytes > limitBytes) {
+        tooLarge = true;
+        chunks.length = 0;
         const error = new Error(`Request body exceeds ${limitBytes} byte limit.`);
         error.code = 'BODY_TOO_LARGE';
+        // Do not destroy the socket here. Destroying it races the JSON 413
+        // response and used to surface as a generic browser network error.
         reject(error);
-        req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+
+    req.on('end', () => {
+      if (!tooLarge) resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('aborted', () => {
+      const error = new Error('Request was aborted before the body was complete.');
+      error.code = 'REQUEST_ABORTED';
+      reject(error);
+    });
     req.on('error', reject);
   });
 }
@@ -46,6 +60,7 @@ async function readJson(req, limitBytes = MAX_BODY_BYTES) {
 function errorStatus(error) {
   if (error?.code === 'BODY_TOO_LARGE') return 413;
   if (error?.code === 'INVALID_JSON' || error?.code === 'INVALID_JOB') return 400;
+  if (error?.code === 'REQUEST_ABORTED') return 400;
   if (error?.code === 'NATIVE_UNAVAILABLE') return 503;
   if (error?.code === 'NATIVE_TIMEOUT') return 504;
   return 500;
