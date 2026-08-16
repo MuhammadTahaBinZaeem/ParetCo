@@ -30,6 +30,28 @@ function setCors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
+function nativeSolutionCount(text) {
+  const matches = [...String(text || '').matchAll(/(\d+)\s+solutions?\s+found/gi)];
+  return matches.length ? Number(matches[matches.length - 1][1]) : 0;
+}
+
+async function runDemoSmoke() {
+  if (String(process.env.PARETOCO_DEMO_SMOKE || 'true').toLowerCase() === 'false') return;
+  try {
+    const result = await runDseJob(PRESETS.demo, { requireNative: true, timeoutMs: 45_000 });
+    const text = result.outTxt || result.log || result.stdout || '';
+    const count = nativeSolutionCount(text);
+    if (!result.success || result.approximate || count < 1) {
+      throw new Error(`Demo completed without a verified native solution (solutions=${count}).`);
+    }
+    console.log(`[demo-smoke] PASS: exact UI demo completed natively with ${count} solution(s).`);
+  } catch (error) {
+    console.error(`[demo-smoke] FAIL: ${error.message}`);
+    if (error.stdout) console.error('[demo-smoke stdout]', String(error.stdout).slice(-12000));
+    if (error.stderr) console.error('[demo-smoke stderr]', String(error.stderr).slice(-12000));
+  }
+}
+
 async function handleApi(pathname, req, res) {
   if (pathname === '/api/health' || pathname === '/healthz') {
     const status = engineStatus();
@@ -105,6 +127,7 @@ if (require.main === module) {
     console.log(`  Native Required: ${status.nativeRequired}`);
     console.log('  Architecture: modular source, no runtime rewrites');
     console.log('====================================================');
+    setImmediate(() => runDemoSmoke());
   });
 }
 
