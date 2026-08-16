@@ -273,8 +273,8 @@
               <input type="number" id="sys-power" placeholder="Unlimited" class="text-input">
             </div>
             <div class="form-group">
-              <label for="sys-utilization">Max Utilization (%)</label>
-              <input type="number" id="sys-utilization" placeholder="100" class="text-input">
+              <label for="sys-utilization">Min Utilization (%)</label>
+              <input type="number" id="sys-utilization" placeholder="Unlimited" class="text-input">
             </div>
             <div class="form-group">
               <label for="sys-area">Max Area</label>
@@ -285,7 +285,7 @@
               <input type="number" id="sys-cost" placeholder="Unlimited" class="text-input">
             </div>
             <div class="form-group">
-              <label for="sys-procs">Max Active Processors</label>
+              <label for="sys-procs">Active Processors (exact)</label>
               <input type="number" id="sys-procs" placeholder="Unlimited" class="text-input">
             </div>
           </div>
@@ -502,5 +502,6 @@
   <script src="incremental_dse.js"></script>
   <script src="app.js"></script>
   <script src="runtime_fixes.js"></script>
+  <script src="result_sync.js"></script>
 </body>
 </html>
