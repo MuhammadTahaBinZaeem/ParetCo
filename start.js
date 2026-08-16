@@ -7,16 +7,15 @@
  * - Captures native-engine stdout + stderr on non-zero exits.
  * - Injects a concise diagnostic block into stderr so the existing API/UI
  *   displays the real failure instead of only the generic exit-code message.
- * - Runs one retained native regression fixture after startup as a deployment
- *   smoke test, proving that the packaged .exe can execute under Wine.
+ * - Runs a real /api/launch request after startup, including a design
+ *   constraint, so Render validates the exact production code path.
  */
 
-const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 
-const ROOT_DIR = __dirname;
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const DIAGNOSTIC_TAIL = 12_000;
@@ -108,7 +107,6 @@ childProcess.spawn = function patchedSpawn(command, args = [], options = {}) {
       stderr
     });
 
-    // Render captures console.error as application logs.
     console.error(diagnostic);
 
     // server.js already accumulates child.stderr and returns it in the API error.
@@ -122,95 +120,102 @@ childProcess.spawn = function patchedSpawn(command, args = [], options = {}) {
   return child;
 };
 
-function findWineBinary() {
-  const candidates = [
-    process.env.PARETOCO_WINE,
-    '/usr/bin/wine64',
-    '/usr/bin/wine',
-    'wine64',
-    'wine'
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) continue;
-    try {
-      const probe = childProcess.spawnSync(candidate, ['--version'], {
-        encoding: 'utf8',
-        timeout: 3000,
-        env: { ...process.env, WINEDEBUG: WINE_DEBUG }
-      });
-      if (!probe.error && probe.status === 0) return candidate;
-    } catch (_) {}
-  }
-
-  return null;
-}
-
-function runNativeSmokeTest() {
-  const enginePath = path.resolve(
-    process.env.PARETOCO_ENGINE || path.join(ROOT_DIR, 'paretoco-engine-release', 'paretoco-engine.exe')
-  );
-  const fixtureDir = path.join(ROOT_DIR, 'tests', 'fixtures', 'generated', 'run_0');
-  const configPath = path.join(fixtureDir, 'config.cfg');
-
-  if (!fs.existsSync(enginePath)) {
-    console.error(`[native-smoke] FAIL: engine missing: ${enginePath}`);
-    return;
-  }
-  if (!fs.existsSync(configPath)) {
-    console.error(`[native-smoke] SKIP: fixture missing: ${configPath}`);
-    return;
-  }
-
-  const wine = process.platform === 'win32' ? null : findWineBinary();
-  if (process.platform !== 'win32' && !wine) {
-    console.error('[native-smoke] FAIL: Wine executable not found.');
-    return;
-  }
-
-  const command = process.platform === 'win32' ? enginePath : wine;
-  const args = process.platform === 'win32'
-    ? ['--config', 'config.cfg']
-    : [enginePath, '--config', 'config.cfg'];
-
-  console.log(`[native-smoke] launching retained regression fixture via ${process.platform === 'win32' ? 'native Windows' : path.basename(wine)}`);
-
-  let stdout = '';
-  let stderr = '';
-  let timedOut = false;
-
-  const child = childProcess.spawn(command, args, {
-    cwd: fixtureDir,
-    env: {
-      ...process.env,
-      WINEDEBUG: WINE_DEBUG,
-      WINEARCH: process.env.WINEARCH || 'win64',
-      WINEPREFIX: process.env.WINEPREFIX || path.join(os.tmpdir(), 'paretoco-wine')
+function runApiSmokeTest() {
+  const payload = JSON.stringify({
+    platform: {
+      processors: [
+        {
+          model: 'ARM',
+          count: 2,
+          modes: [
+            {
+              name: 'default',
+              cycle: 1,
+              mem: 4096,
+              dynPower: 10,
+              staticPower: 2,
+              area: 5,
+              monetary: 10
+            }
+          ]
+        }
+      ]
+    },
+    applications: [
+      {
+        name: 'SmokeApp',
+        actors: ['src_node', 'proc_node', 'snk_node'],
+        channels: [
+          { name: 'ch1', src: 'src_node', dst: 'proc_node', tokens: 0 },
+          { name: 'ch2', src: 'proc_node', dst: 'snk_node', tokens: 0 },
+          { name: 'ch3', src: 'snk_node', dst: 'src_node', tokens: 1 }
+        ]
+      }
+    ],
+    wcets: [
+      { taskType: 'src_node', procModel: 'ARM', mode: 'default', wcet: 10 },
+      { taskType: 'proc_node', procModel: 'ARM', mode: 'default', wcet: 25 },
+      { taskType: 'snk_node', procModel: 'ARM', mode: 'default', wcet: 15 }
+    ],
+    // Include a design constraint on purpose: this validates the same desConst.xml
+    // path that previously failed because of the unsupported design_constraints_file key.
+    constraints: [
+      { appName: 'SmokeApp', period: 1000, latency: 0 }
+    ],
+    dse: {
+      model: 'SDF_PR_ONLINE',
+      criteria: 'THROUGHPUT',
+      search: 'FIRST',
+      th_prop: 'SSE'
     }
   });
 
-  child.stdout?.on('data', chunk => { stdout += chunk.toString(); });
-  child.stderr?.on('data', chunk => { stderr += chunk.toString(); });
+  const request = http.request({
+    hostname: '127.0.0.1',
+    port: Number(PORT),
+    path: '/api/launch',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    },
+    timeout: 30_000
+  }, response => {
+    let body = '';
+    response.on('data', chunk => { body += chunk.toString(); });
+    response.on('end', () => {
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch (_) {}
 
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill('SIGKILL');
-  }, 30_000);
-  timer.unref?.();
+      if (response.statusCode >= 200 && response.statusCode < 300 && parsed.success !== false) {
+        const output = String(parsed.outTxt || parsed.log || '');
+        const matches = [...output.matchAll(/(\d+)\s+solutions?/gi)];
+        const solutions = matches.length ? Number(matches[matches.length - 1][1]) : 'unknown';
+        console.log(`[api-smoke] PASS: /api/launch HTTP ${response.statusCode}, solutions=${solutions}`);
+        return;
+      }
 
-  child.on('close', (code, signal) => {
-    clearTimeout(timer);
-    const combined = `${stdout}\n${stderr}`;
-    const matches = [...combined.matchAll(/(\d+)\s+solutions?/gi)];
-    const solutions = matches.length ? Number(matches[matches.length - 1][1]) : 0;
-
-    if (!timedOut && code === 0) {
-      console.log(`[native-smoke] PASS: exit 0, solutions=${solutions}`);
-      return;
-    }
-
-    console.error(`[native-smoke] FAIL: ${timedOut ? 'timeout' : `exit ${code}`}, signal=${signal || 'none'}, solutions=${solutions}`);
+      console.error(`[api-smoke] FAIL: /api/launch HTTP ${response.statusCode}`);
+      if (parsed.error) console.error(`[api-smoke] error: ${parsed.error}`);
+      if (parsed.stdout) console.error(`[api-smoke] stdout:\n${tail(parsed.stdout)}`);
+      if (parsed.stderr) console.error(`[api-smoke] stderr:\n${tail(parsed.stderr)}`);
+      if (!parsed.error && !parsed.stdout && !parsed.stderr) {
+        console.error(`[api-smoke] body:\n${tail(body)}`);
+      }
+    });
   });
+
+  request.on('timeout', () => {
+    console.error('[api-smoke] FAIL: /api/launch timed out after 30s');
+    request.destroy();
+  });
+
+  request.on('error', err => {
+    console.error(`[api-smoke] FAIL: ${err.message}`);
+  });
+
+  request.write(payload);
+  request.end();
 }
 
 const server = require('./server');
@@ -222,6 +227,6 @@ server.listen(PORT, HOST, () => {
   console.log(`  Wine diagnostics: ${WINE_DEBUG}`);
   console.log('====================================================');
 
-  // Keep the HTTP service available while the smoke test runs asynchronously.
-  setTimeout(runNativeSmokeTest, 250).unref?.();
+  // Keep the HTTP service available while the end-to-end smoke test runs asynchronously.
+  setTimeout(runApiSmokeTest, 500).unref?.();
 });
