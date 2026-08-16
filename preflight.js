@@ -1,16 +1,41 @@
 'use strict';
 
-// UI import/export compatibility repairs. This file modifies only the shipped
-// JavaScript source at container start; native engine binaries are untouched.
+// Source-level compatibility repairs applied before the server loads. These
+// changes affect only the web/server bridge; native engine binaries are untouched.
 const fs = require('fs');
 const path = require('path');
 
-const appPath = path.join(__dirname, 'ui', 'app.js');
-const serverPath = path.join(__dirname, 'server.js');
+const ROOT = __dirname;
+const appPath = path.join(ROOT, 'ui', 'app.js');
+const serverPath = path.join(ROOT, 'server.js');
+const archStudioPath = path.join(ROOT, 'ui', 'architecture_studio.js');
+const paretoFrontierPath = path.join(ROOT, 'ui', 'pareto_frontier.js');
+const incrementalPath = path.join(ROOT, 'ui', 'incremental_dse.js');
+
+function patchTextFile(filePath, patches, prefix) {
+  if (!fs.existsSync(filePath)) return;
+  let source = fs.readFileSync(filePath, 'utf8');
+  let changed = false;
+
+  for (const patch of patches) {
+    const { oldText, newText, label } = patch;
+    if (source.includes(newText)) continue;
+    if (!source.includes(oldText)) {
+      console.warn(`[${prefix}] ${label}: target not found.`);
+      continue;
+    }
+    source = source.replace(oldText, newText);
+    changed = true;
+    console.log(`[${prefix}] ${label}: applied.`);
+  }
+
+  if (changed) fs.writeFileSync(filePath, source, 'utf8');
+}
 
 function patchServerConstraintSemantics() {
   if (!fs.existsSync(serverPath)) return;
   let source = fs.readFileSync(serverPath, 'utf8');
+
   const oldBlock = `    // Write Design Constraints XML
     let constraintsXml = jobData.constraintsXml;
     if (!constraintsXml && jobData.constraints && jobData.constraints.length > 0) {
@@ -70,14 +95,66 @@ function patchServerConstraintSemantics() {
       fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);
     }`;
 
-  if (source.includes(newBlock)) return;
-  if (!source.includes(oldBlock)) {
-    console.warn('[server-preflight] design-constraint bridge target not found.');
-    return;
+  if (!source.includes(newBlock) && source.includes(oldBlock)) {
+    source = source.replace(oldBlock, newBlock);
+    fs.writeFileSync(serverPath, source, 'utf8');
+    console.log('[server-preflight] native system-constraint semantics enabled.');
   }
-  source = source.replace(oldBlock, newBlock);
-  fs.writeFileSync(serverPath, source, 'utf8');
-  console.log('[server-preflight] native system-constraint semantics enabled.');
+}
+
+function patchServerReliability() {
+  patchTextFile(serverPath, [
+    {
+      label: 'analytical fallback treats utilization as a minimum',
+      oldText: `  const maxAllowedUtil = (job.sysConstraints?.utilization > 0)
+    ? parseFloat(job.sysConstraints.utilization)
+    : ((job.sysConstraints?.maxUtil && job.sysConstraints.maxUtil !== "Unlimited") ? parseFloat(job.sysConstraints.maxUtil) : Infinity);`,
+      newText: `  const minAllowedUtil = (job.sysConstraints?.utilization > 0)
+    ? parseFloat(job.sysConstraints.utilization)
+    : -Infinity;
+  const maxAllowedArea = (job.sysConstraints?.area > 0) ? parseFloat(job.sysConstraints.area) : Infinity;
+  const maxAllowedCost = (job.sysConstraints?.cost > 0) ? parseFloat(job.sysConstraints.cost) : Infinity;
+  const exactProcsUsed = (job.sysConstraints?.procsUsed > 0) ? parseInt(job.sysConstraints.procsUsed, 10) : null;`
+    },
+    {
+      label: 'analytical fallback enforces all supported system semantics',
+      oldText: `    if (period > minAllowedPeriod || power > maxAllowedPower || util > maxAllowedUtil) continue;`,
+      newText: `    if (period > minAllowedPeriod || power > maxAllowedPower || area > maxAllowedArea || cost > maxAllowedCost || util < minAllowedUtil || (exactProcsUsed !== null && totalCores !== exactProcsUsed)) continue;`
+    },
+    {
+      label: 'bound native solver wall-clock execution',
+      oldText: `    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => { stdout += d.toString(); });`,
+      newText: `    let stdout = '';
+    let stderr = '';
+    const nativeTimeoutMs = Math.max(10_000, Number(process.env.PARETOCO_NATIVE_TIMEOUT_MS) || 60_000);
+    const nativeTimeout = setTimeout(() => {
+      stderr += \`\\n[ParetoCo] Native solver exceeded \${nativeTimeoutMs} ms and was terminated.\\n\`;
+      try { child.kill('SIGKILL'); } catch (_) {}
+    }, nativeTimeoutMs);
+    nativeTimeout.unref?.();
+
+    child.stdout.on('data', (d) => { stdout += d.toString(); });`
+    },
+    {
+      label: 'clear native solver timeout on process close',
+      oldText: `    child.on('close', (code) => {
+      let outTxt = '';`,
+      newText: `    child.on('close', (code) => {
+      clearTimeout(nativeTimeout);
+      let outTxt = '';`
+    },
+    {
+      label: 'clear native solver timeout on launch error',
+      oldText: `    child.on('error', (err) => {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}`,
+      newText: `    child.on('error', (err) => {
+      clearTimeout(nativeTimeout);
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}`
+    }
+  ], 'server-preflight');
 }
 
 function patchUiSource() {
@@ -196,9 +273,138 @@ function patchUiSource() {
     xml += '</platform>\\n';`;
   replaceOnce(oldPlatformClose, newPlatformClose, 'generated/exported platform.xml retains interconnect data');
 
+  replaceOnce(
+    '    state.dse.criteria = "THROUGHPUT";',
+    `    // Demo must be self-contained: clear stale user limits/results before loading it.
+    state.constraints = [{ appName: "TestApp", period: 1000, latency: 0 }];
+    Object.assign(state.sysConstraints, { power: -1, utilization: -1, area: -1, cost: -1, procsUsed: -1, maxPower: -1, maxUtil: -1 });
+    state.results = null;
+    state.dse.criteria = "THROUGHPUT";`,
+    'demo resets stale constraints and prior results'
+  );
+
+  const oldAutoOptFinish = `        renderPlatform(); updateKPIs(); autoSave();
+        toast("Architecture Optimized! Rerun DSE to verify.", "success");`;
+  const newAutoOptFinish = `        renderPlatform(); updateKPIs(); autoSave();
+        if (data.verification?.outTxt) parseResults(data.verification.outTxt, "native-verified-out.txt");
+        const verifiedCount = data.verification?.solutionCount || 0;
+        toast(\`Architecture optimized and native-verified (\${verifiedCount} solution(s)).\`, "success");`;
+  replaceOnce(oldAutoOptFinish, newAutoOptFinish, 'Auto-Optimize displays native-verified result instead of asking for manual verification');
+
   if (changed) fs.writeFileSync(appPath, source, 'utf8');
 }
 
+function patchArchitectureStudio() {
+  const oldOverlayBlock = `    // Calculate utilization per PE
+    const totalUtil = parseInt(lastSolution["Utilization (%)"]) || 0;
+    peNodes.forEach((pe, i) => {
+      const taskCount = pe.overlay.mappedTasks.length;
+      pe.overlay.utilization = taskCount > 0 ? Math.min(100, Math.round(totalUtil * taskCount / Math.max(1, mappings.length))) : 0;
+      pe.overlay.power = Math.round((parseInt(lastSolution["Power (mW)"]) || 0) / Math.max(1, peNodes.length));
+      pe.overlay.memPressure = taskCount > 0 ? Math.min(100, taskCount * 25) : 0;
+    });
+
+    // Mark critical path (highest WCET chain)
+    if (studio.workloadNodes.length > 0) {
+      let maxWcet = 0, criticalIdx = 0;
+      studio.workloadNodes.forEach((wn, i) => {
+        if ((wn.properties.wcet || 0) > maxWcet) {
+          maxWcet = wn.properties.wcet || 0;
+          criticalIdx = i;
+        }
+      });
+      studio.workloadNodes[criticalIdx].overlay.isCritical = true;
+      // Mark edges connected to critical node
+      studio.workloadEdges.forEach(e => {
+        if (e.srcNodeId === studio.workloadNodes[criticalIdx]?.id || e.dstNodeId === studio.workloadNodes[criticalIdx]?.id) {
+          e.overlay.isCritical = true;
+          e.overlay.dataRate = 1;
+        }
+      });
+    }
+
+    // Communication edges
+    studio.workloadEdges.forEach(e => {
+      const srcWn = studio.workloadNodes.find(n => n.id === e.srcNodeId);
+      const dstWn = studio.workloadNodes.find(n => n.id === e.dstNodeId);
+      if (srcWn && dstWn && srcWn.overlay.mappedTo !== null && dstWn.overlay.mappedTo !== null) {
+        if (srcWn.overlay.mappedTo !== dstWn.overlay.mappedTo) {
+          e.overlay.dataRate = 1;
+          e.overlay.utilization = Math.round(30 + Math.random() * 50);
+          if (e.overlay.utilization > 75) e.overlay.saturated = true;
+        }
+      }
+    });
+
+    // Platform edges utilization
+    studio.platformEdges.forEach(e => {
+      e.overlay.dataRate = 1;
+      e.overlay.utilization = Math.round(20 + Math.random() * 60);
+      if (e.overlay.utilization > 80) e.overlay.saturated = true;
+    });`;
+
+  const newOverlayBlock = `    // The native result currently exposes task→PE mapping and system-wide metrics,
+    // not per-PE power/utilization, edge traffic, memory pressure, or a critical path.
+    // Preserve only the mapping we can prove; do not fabricate physical metrics.
+    peNodes.forEach(pe => {
+      pe.overlay.utilization = 0;
+      pe.overlay.power = 0;
+      pe.overlay.memPressure = 0;
+    });
+    studio.workloadEdges.forEach(e => {
+      e.overlay.dataRate = 0;
+      e.overlay.utilization = 0;
+      e.overlay.saturated = false;
+      e.overlay.isCritical = false;
+    });
+    studio.platformEdges.forEach(e => {
+      e.overlay.dataRate = 0;
+      e.overlay.utilization = 0;
+      e.overlay.saturated = false;
+      e.overlay.isCritical = false;
+    });`;
+
+  patchTextFile(archStudioPath, [{
+    oldText: oldOverlayBlock,
+    newText: newOverlayBlock,
+    label: 'remove random/fabricated architecture overlay metrics'
+  }], 'studio-preflight');
+}
+
+function patchParetoFrontier() {
+  patchTextFile(paretoFrontierPath, [
+    {
+      label: 'derive throughput as inverse period without an invented 1000x scale',
+      oldText: '        throughput:  row["Period"] ? (1000 / parseFloat(row["Period"])) : 0,',
+      newText: '        throughput:  parseFloat(row["Throughput"]) || (row["Period"] ? (1 / parseFloat(row["Period"])) : 0),'
+    },
+    {
+      label: 'use white chart background',
+      oldText: '    ctx.fillStyle = "#EBF4FA";',
+      newText: '    ctx.fillStyle = "#FFFFFF";'
+    }
+  ], 'pareto-preflight');
+}
+
+function patchIncrementalDseLabels() {
+  patchTextFile(incrementalPath, [
+    {
+      label: 'do not claim cached solutions are passed into native solver as warm-start seeds',
+      oldText: '<h4>🔥 Warm-Start Payload</h4>',
+      newText: '<h4>♻️ Prior-Solution Cache</h4>'
+    },
+    {
+      label: 'rename seed count to cached solution count',
+      oldText: '<span class="ws-label">Seed solutions</span>',
+      newText: '<span class="ws-label">Cached solutions</span>'
+    }
+  ], 'incremental-preflight');
+}
+
 patchServerConstraintSemantics();
+patchServerReliability();
 patchUiSource();
+patchArchitectureStudio();
+patchParetoFrontier();
+patchIncrementalDseLabels();
 require('./start');
