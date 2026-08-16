@@ -209,3 +209,56 @@
         </div>
       </div>
     </section>
+
+    <!-- ══════════ APPLICATIONS ══════════ -->
+    <section class="page" id="page-applications">
+      <div class="card">
+        <div class="card-header">
+          <h2>SDF Application Graphs</h2>
+          <button class="btn btn-sm btn-outline" id="btn-load-sdf-xml">Load HSDF XML</button>
+        </div>
+        <div class="card-body">
+          <div id="applications-list"></div>
+          <div class="empty-state" id="applications-empty"><p>No SDF graphs loaded. Click <strong>Load HSDF XML</strong> to import.</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>WCET Mapping Table</h2>
+          <button class="btn btn-sm btn-outline" id="btn-load-wcet-xml">Load WCETs.xml</button>
+        </div>
+          <div class="table-responsive" style="overflow-x: auto;">
+            <table id="wcet-table" class="hidden">
+              <thead>
+                <tr>
+                  <th style="width: 28%;">Task Type</th>
+                  <th style="width: 28%;">Processor</th>
+                  <th style="width: 20%;">Mode</th>
+                  <th style="width: 18%;">WCET (cycles)</th>
+                  <th style="width: 6%;"></th>
+                </tr>
+              </thead>
+              <tbody id="wcet-tbody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="wcet-empty"><p>No WCET data loaded.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ CONSTRAINTS ══════════ -->
+    <section class="page" id="page-constraints">
+      <div class="card">
+        <div class="card-header">
+          <h2>Design Constraints</h2>
+          <div class="card-actions">
+            <button class="btn btn-sm btn-outline" id="btn-load-constraints-xml">Load desConst.xml</button>
+            <button class="btn btn-sm btn-primary" id="btn-add-constraint">+ Add Constraint</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <table id="constraints-table" class="hidden">
+            <thead><tr><th>Application</th><th>Period</th><th>Latency</th><th></th></tr></thead>
+            <tbody id="constraints-tbody"></tbody>
+          </table>
+          <div class="empty-state" id="constraints-empty"><p>No constraints defined.</p></div>
