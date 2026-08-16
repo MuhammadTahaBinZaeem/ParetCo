@@ -1,10 +1,8 @@
 'use strict';
 
-const http = require('http');
+const { runDseJob } = require('../server/engine_bridge');
 
-const PORT = Number(process.env.PORT || 8080);
 const DEFAULT_TIMEOUT_MS = Math.max(10_000, Number(process.env.PARETOCO_NATIVE_VERIFY_TIMEOUT_MS) || 35_000);
-const MAX_RESPONSE_BYTES = Math.max(1_000_000, Number(process.env.PARETOCO_NATIVE_VERIFY_MAX_BYTES) || 8_000_000);
 
 function countSolutions(text) {
   const matches = String(text || '').match(/(\d+)\s+solutions?\s+found/gi) || [];
@@ -31,7 +29,6 @@ function summarizeNativeText(text) {
   const costs = metricValues(source, 'sys cost(?:\\s*\\(only used parts\\))?');
   const utilizations = metricValues(source, 'Sys utilization');
   const solutionCount = countSolutions(source);
-
   const min = values => values.length ? Math.min(...values) : null;
   const max = values => values.length ? Math.max(...values) : null;
 
@@ -51,65 +48,31 @@ function summarizeNativeText(text) {
   };
 }
 
-function runNativeDse(job, options = {}) {
+async function runNativeDse(job, options = {}) {
   const timeoutMs = Math.max(5_000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS);
-  const body = JSON.stringify(job || {});
-
-  return new Promise((resolve, reject) => {
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port: PORT,
-      path: '/api/launch',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
+  try {
+    const result = await runDseJob(job, { timeoutMs, requireNative: true });
+    const nativeText = result.outTxt || result.log || result.stdout || '';
+    return {
+      ok: result.success !== false && result.approximate !== true,
+      statusCode: 200,
+      result,
+      summary: summarizeNativeText(nativeText)
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      statusCode: error.code === 'INVALID_JOB' ? 400 : error.code === 'NATIVE_TIMEOUT' ? 504 : 500,
+      result: {
+        success: false,
+        error: error.message,
+        exitCode: error.exitCode,
+        stdout: error.stdout || '',
+        stderr: error.stderr || ''
       },
-      timeout: timeoutMs
-    }, response => {
-      let responseBody = '';
-      let bytes = 0;
-
-      response.on('data', chunk => {
-        bytes += chunk.length;
-        if (bytes > MAX_RESPONSE_BYTES) {
-          response.destroy(new Error('Native verification response exceeded safety limit.'));
-          return;
-        }
-        responseBody += chunk.toString();
-      });
-
-      response.on('end', () => {
-        let parsed;
-        try {
-          parsed = JSON.parse(responseBody || '{}');
-        } catch (err) {
-          reject(new Error(`Native verifier received invalid JSON (HTTP ${response.statusCode}).`));
-          return;
-        }
-
-        const nativeText = parsed.outTxt || parsed.log || parsed.stdout || '';
-        const summary = summarizeNativeText(nativeText);
-        const okHttp = response.statusCode >= 200 && response.statusCode < 300;
-
-        resolve({
-          ok: okHttp && parsed.success !== false,
-          statusCode: response.statusCode,
-          result: parsed,
-          summary
-        });
-      });
-    });
-
-    req.on('timeout', () => req.destroy(new Error(`Native verification timed out after ${timeoutMs} ms.`)));
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+      summary: summarizeNativeText(error.stdout || '')
+    };
+  }
 }
 
-module.exports = {
-  runNativeDse,
-  countSolutions,
-  summarizeNativeText
-};
+module.exports = { runNativeDse, countSolutions, summarizeNativeText };
