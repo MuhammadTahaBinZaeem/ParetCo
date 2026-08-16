@@ -90,9 +90,9 @@
         <h1 class="page-title" id="page-title">Dashboard</h1>
       </div>
       <div class="top-bar-right">
-        <button class="btn btn-outline" id="btn-demo-preset" onclick="window.paretoco?.loadDemoPreset?.() || document.getElementById('btn-demo-preset')?.click()" title="Load Ready-to-Run Demo Benchmark">⚡ Load Demo</button>
+        <button class="btn btn-outline" id="btn-demo-preset" title="Load Ready-to-Run Demo Benchmark">⚡ Load Demo</button>
         <button class="btn btn-outline" id="btn-import-config" title="Import Configuration">↑ Import</button>
-        <button class="btn btn-primary" id="btn-launch" onclick="window.paretoco?.launchEngine?.()" title="Launch DSE Solver">▶ Launch DSE</button>
+        <button class="btn btn-primary" id="btn-launch" title="Launch DSE Solver">▶ Launch DSE</button>
       </div>
     </header>
 
@@ -301,102 +301,130 @@
           <div class="card-header"><h2>🤖 AI Co-Pilot (NL-to-DSE)</h2></div>
           <div class="card-body">
             <div class="form-group">
-              <textarea id="ai-copilot-input" class="text-input" rows="4" placeholder="e.g. I have four ARM cores and two NPUs. The vision pipeline has preprocessing, detection and tracking. Detection must run on an NPU. Latency must remain below 33 ms and power below 12 W."></textarea>
-              <button class="btn btn-primary" id="btn-ai-copilot" style="margin-top: 12px;">✨ Generate DSE Model</button>
+              <textarea id="ai-copilot-input" class="text-input" rows="4" placeholder="e.g. I have four ARM cores and two NPUs. The vision pipeline has preprocessing, detection and tracking. Detection must run on the NPU and the frame deadline is 33 ms."></textarea>
             </div>
+            <button class="btn btn-primary" id="btn-ai-copilot" style="width:100%;">✨ Generate DSE Model</button>
           </div>
         </div>
-
         <div class="card">
           <div class="card-header"><h2>🚀 Autonomous Architecture Agent</h2></div>
           <div class="card-body">
             <div class="form-group">
               <textarea id="ai-auto-opt-input" class="text-input" rows="4" placeholder="e.g. Find an architecture achieving >= 30 FPS, < 15 W and < $80 BOM. Optimize energy first and cost second."></textarea>
-              <button class="btn btn-primary" id="btn-ai-auto-opt" style="margin-top: 12px;">⚡ Auto-Optimize Architecture</button>
             </div>
+            <button class="btn btn-primary" id="btn-ai-auto-opt" style="width:100%;">⚡ Auto-Optimize Architecture</button>
           </div>
         </div>
       </div>
 
-      <div class="two-col">
-        <div class="card">
-          <div class="card-header"><h2>Search Configuration</h2></div>
-          <div class="card-body">
-            <div class="form-grid form-single">
-              <div class="form-group"><label>CP Model</label><select id="dse-model" class="text-input"><option value="NONECP">None</option><option value="SDF">SDF</option><option value="SDF_PR_ONLINE" selected>SDF_PR_ONLINE</option></select></div>
-              <div class="form-group"><label>Search Type</label><select id="dse-search" class="text-input"><option value="NONESEARCH">None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT" selected>OPTIMIZE_IT</option></select></div>
-              <div class="form-group"><label>Optimization Criteria</label><select id="dse-criteria" class="text-input"><option value="NONE">None</option><option value="POWER" selected>POWER</option><option value="THROUGHPUT">THROUGHPUT</option><option value="LATENCY">LATENCY</option></select></div>
-              <div class="form-group"><label>Threads (0 = all)</label><input type="number" id="dse-threads" value="0" class="text-input"></div>
-              <div class="form-group"><label>Timeout — first (s)</label><input type="number" id="dse-timeout1" value="0" class="text-input"></div>
-              <div class="form-group"><label>Timeout — incremental (s)</label><input type="number" id="dse-timeout2" value="0" class="text-input"></div>
-              <div class="form-group"><label>Luby Scale</label><input type="number" id="dse-luby" value="0" class="text-input"></div>
-              <div class="form-group"><label>No-good Depth</label><input type="number" id="dse-nogood" value="75" class="text-input"></div>
-              <div class="form-group"><label>Throughput Propagator</label><select id="dse-thprop" class="text-input"><option value="SSE" selected>SSE</option><option value="MCR">MCR</option></select></div>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h2>Presolver</h2></div>
-          <div class="card-body">
-            <div class="form-grid form-single">
-              <div class="form-group"><label>Pre-solve Model</label><select id="pre-model" class="text-input"><option value="NONE" selected>None</option><option value="ONE_PROC_MAPPINGS">ONE_PROC_MAPPINGS</option></select></div>
-              <div class="form-group"><label>Pre-solve Search</label><select id="pre-search" class="text-input"><option value="NONESEARCH" selected>None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT">OPTIMIZE_IT</option></select></div>
-              <div class="form-group"><label>Heuristic</label><select id="pre-heuristic" class="text-input"><option value="NONE" selected>None</option><option value="TODAES">TODAES</option></select></div>
-              <div class="form-group"><label>Multi-step Search</label><select id="pre-multisearch" class="text-input"><option value="NONESEARCH" selected>None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT">OPTIMIZE_IT</option></select></div>
-              <div class="form-group"><label>Timeout — first (s)</label><input type="number" id="pre-timeout1" value="0" class="text-input"></div>
-              <div class="form-group"><label>Timeout — incremental (s)</label><input type="number" id="pre-timeout2" value="0" class="text-input"></div>
-            </div>
-          </div>
-        </div>
-      </div>
       <div class="card">
-        <div class="card-header"><h2>Output Settings</h2></div>
+        <div class="card-header"><h2>Design Space Exploration</h2></div>
         <div class="card-body">
-          <div class="form-grid">
-            <div class="form-group"><label>Output File Type</label><select id="out-type" class="text-input"><option value="ALL_OUT" selected>ALL</option><option value="CSV">CSV</option><option value="TXT">TXT</option><option value="XML">XML</option></select></div>
-            <div class="form-group"><label>Print Frequency</label><select id="out-freq" class="text-input"><option value="ALL">ALL</option><option value="LAST" selected>LAST</option><option value="FIRSTandLAST">FIRST and LAST</option></select></div>
-            <div class="form-group"><label>Print Metric</label><select id="out-metric" class="text-input"><option value="NONE" selected>None</option><option value="POWER">POWER</option><option value="THROUGHPUT">THROUGHPUT</option><option value="LATENCY">LATENCY</option></select></div>
-            <div class="form-group"><label>Log Level</label><select id="out-log-level" class="text-input"><option value="CRITICAL">CRITICAL</option><option value="ERROR">ERROR</option><option value="WARNING">WARNING</option><option value="INFO" selected>INFO</option><option value="DEBUG">DEBUG</option></select></div>
+          <div class="form-grid cols-3">
+            <div class="form-group">
+              <label for="dse-model">Model</label>
+              <select id="dse-model" class="select-input">
+                <option value="SDF_PR_ONLINE">SDF_PR_ONLINE</option>
+                <option value="SDF_PR_ONLINE_MULTI">SDF_PR_ONLINE_MULTI</option>
+                <option value="SDF_PR_STATIC">SDF_PR_STATIC</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="dse-search">Search</label>
+              <select id="dse-search" class="select-input">
+                <option value="OPTIMIZE_IT">OPTIMIZE_IT</option>
+                <option value="OPTIMIZE">OPTIMIZE</option>
+                <option value="FIRST">FIRST</option>
+                <option value="ALL">ALL</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="dse-criteria">Criteria</label>
+              <select id="dse-criteria" class="select-input">
+                <option value="POWER">POWER</option>
+                <option value="THROUGHPUT">THROUGHPUT</option>
+                <option value="AREA">AREA</option>
+                <option value="COST">COST</option>
+                <option value="NONE">NONE</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="dse-thprop">Throughput Propagator</label>
+              <select id="dse-thprop" class="select-input">
+                <option value="SSE">SSE</option>
+                <option value="MCR">MCR</option>
+              </select>
+            </div>
+            <div class="form-group"><label for="dse-threads">Threads</label><input type="number" id="dse-threads" value="0" class="text-input"></div>
+            <div class="form-group"><label for="dse-timeout1">Timeout 1</label><input type="number" id="dse-timeout1" value="0" class="text-input"></div>
+            <div class="form-group"><label for="dse-timeout2">Timeout 2</label><input type="number" id="dse-timeout2" value="0" class="text-input"></div>
+            <div class="form-group"><label for="dse-luby">Luby Scale</label><input type="number" id="dse-luby" value="0" class="text-input"></div>
+            <div class="form-group"><label for="dse-nogood">NoGood Depth</label><input type="number" id="dse-nogood" value="75" class="text-input"></div>
           </div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Presolver</h2></div>
+        <div class="card-body">
+          <div class="form-grid cols-3">
+            <div class="form-group"><label for="pre-model">Model</label><select id="pre-model" class="select-input"><option value="NONE">NONE</option><option value="SDF_PR_ONLINE">SDF_PR_ONLINE</option></select></div>
+            <div class="form-group"><label for="pre-search">Search</label><select id="pre-search" class="select-input"><option value="NONESEARCH">NONESEARCH</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option></select></div>
+            <div class="form-group"><label for="pre-heuristic">Heuristic</label><select id="pre-heuristic" class="select-input"><option value="NONE">NONE</option><option value="FIRST_FAIL">FIRST_FAIL</option></select></div>
+            <div class="form-group"><label for="pre-multisearch">Multi Search</label><select id="pre-multisearch" class="select-input"><option value="NONESEARCH">NONESEARCH</option><option value="FIRST">FIRST</option></select></div>
+            <div class="form-group"><label for="pre-timeout1">Timeout 1</label><input type="number" id="pre-timeout1" value="0" class="text-input"></div>
+            <div class="form-group"><label for="pre-timeout2">Timeout 2</label><input type="number" id="pre-timeout2" value="0" class="text-input"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Output</h2></div>
+        <div class="card-body">
+          <div class="form-grid cols-4">
+            <div class="form-group"><label for="out-type">File Type</label><select id="out-type" class="select-input"><option value="ALL_OUT">ALL_OUT</option><option value="CSV">CSV</option><option value="TXT">TXT</option></select></div>
+            <div class="form-group"><label for="out-freq">Print Frequency</label><select id="out-freq" class="select-input"><option value="LAST">LAST</option><option value="ALL">ALL</option></select></div>
+            <div class="form-group"><label for="out-metric">Metric</label><select id="out-metric" class="select-input"><option value="NONE">NONE</option><option value="POWER">POWER</option><option value="THROUGHPUT">THROUGHPUT</option></select></div>
+            <div class="form-group"><label for="out-log-level">Log Level</label><select id="out-log-level" class="select-input"><option value="INFO">INFO</option><option value="DEBUG">DEBUG</option><option value="WARN">WARN</option></select></div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <h2>Generated config.cfg</h2>
           <div class="card-actions">
             <button class="btn btn-sm btn-outline" id="btn-copy-config">Copy</button>
-            <button class="btn btn-sm btn-primary" id="btn-download-config">Download</button>
+            <button class="btn btn-sm btn-outline" id="btn-download-config">Download</button>
           </div>
         </div>
-        <div class="card-body">
-          <pre class="config-preview" id="config-preview"></pre>
-        </div>
+        <div class="card-body"><pre class="config-preview" id="config-preview"></pre></div>
       </div>
     </section>
 
     <!-- ══════════ RESULTS ══════════ -->
     <section class="page" id="page-results">
       <div class="card">
-        <div class="card-header">
-          <h2>Optimization Results</h2>
-          <button class="btn btn-sm btn-outline" id="btn-load-results">Load out.txt / out.csv</button>
-        </div>
+        <div class="card-header"><h2>Optimization Results</h2><button class="btn btn-sm btn-outline" id="btn-load-results">Load out.txt / out.csv</button></div>
         <div class="card-body">
-          <div class="empty-state" id="results-empty"><p>No results yet. Run a DSE or load existing <code>out.txt</code> / <code>out.csv</code> files.</p></div>
+          <div class="empty-state" id="results-empty"><p>No results loaded. Run the DSE engine or import an output file.</p></div>
           <div id="results-content" class="hidden">
-            <div class="results-summary" id="results-summary"></div>
-            <canvas id="results-chart" width="800" height="300"></canvas>
-            <table id="results-table"><thead id="results-thead"></thead><tbody id="results-tbody"></tbody></table>
-            
-            <div id="unsat-doctor-container" class="hidden" style="margin-top: 24px; padding: 20px; background: #FFD1DC; border: 1px solid #B6CBE0; border-radius: 8px;">
-              <h3 style="color: #1E293B; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
-                <div class="img-container" style="display: flex; justify-content: center; align-items: center; overflow: hidden; background-color: #B6CBE0; border-radius: 4px; width: 28px; height: 28px; flex-shrink: 0;"><img src="/assets/flat-warning.png" alt="Warning" style="max-width: 100%; max-height: 100%; object-fit: contain;"></div>
-                0 Feasible Solutions Detected
-              </h3>
-              <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">The engine could not find any valid mapping that satisfies all constraints. Use the Unsat Doctor to diagnose the bottleneck and propose repairs.</p>
-              <button class="btn btn-danger" id="btn-unsat-doctor" onclick="paretoco.diagnoseUnsat()">🩺 Diagnose & Propose Repairs</button>
-              <div id="unsat-doctor-options" style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;"></div>
+            <div id="results-summary" class="results-summary"></div>
+            <div id="unsat-doctor-container" class="hidden" style="margin-top: 24px;">
+              <div class="card" style="border: 2px solid #E07A5F; background: #FDF3EF;">
+                <div class="card-header" style="background:#FBE8E0; border-bottom:1px solid #E9B8A8;">
+                  <h2 style="color:#9C3D25;">🩺 AI UNSAT Doctor</h2>
+                  <span class="badge" style="background:#E07A5F; color:white;">0 Solutions</span>
+                </div>
+                <div class="card-body">
+                  <p style="color:#7A3424; margin-top:0;">The current design constraints are mutually infeasible. The AI doctor can isolate the conflict and propose minimal verified repairs.</p>
+                  <button class="btn btn-primary" id="btn-unsat-doctor">🩺 Diagnose & Propose Repairs</button>
+                  <div id="unsat-doctor-options" style="margin-top:16px; display:grid; gap:12px;"></div>
+                </div>
+              </div>
             </div>
+            <canvas id="results-chart" width="1000" height="300"></canvas>
+            <table id="results-table"><thead id="results-thead"></thead><tbody id="results-tbody"></tbody></table>
           </div>
         </div>
       </div>
@@ -406,97 +434,46 @@
     <section class="page" id="page-ai-analyst">
       <div class="card">
         <div class="card-header">
-          <h2>Featherless AI Insights</h2>
-          <button class="btn btn-sm btn-primary" id="btn-generate-insights" onclick="paretoco.generateInsights()">✨ Generate Analysis</button>
+          <h2>AI Design Analysis</h2>
+          <button class="btn btn-primary" id="btn-generate-insights">✨ Generate Insights</button>
         </div>
         <div class="card-body">
-          <div class="empty-state" id="ai-empty"><p>Run a DSE or load results, then click Generate Analysis to get AI-powered trade-off insights and bottleneck detection.</p></div>
-          <div id="ai-content" class="hidden">
-            <div id="ai-markdown-render" style="line-height: 1.6; color: #1a1a2e; white-space: pre-wrap; font-family: Inter, sans-serif;"></div>
+          <div id="ai-analysis-content">
+            <div class="empty-state"><p>Run DSE first, then generate AI-powered architectural insights from the current solution set.</p></div>
           </div>
+          <div id="ai-markdown-render" style="margin-top:18px; line-height:1.6;"></div>
         </div>
       </div>
     </section>
 
     <!-- ══════════ ARCHITECTURE STUDIO ══════════ -->
     <section class="page" id="page-arch-studio">
-      <div class="studio-layout">
-        <div class="studio-left">
-          <div class="studio-tabs">
-            <button class="studio-tab active" data-tab="platform">🖥️ Platform</button>
-            <button class="studio-tab" data-tab="workload">📐 Workload</button>
-          </div>
-          <div class="studio-palette-container">
-            <div class="studio-palette-title">Components</div>
-            <div id="studio-palette" class="studio-palette"></div>
-          </div>
-          <div class="studio-inspector-container">
-            <div class="studio-inspector-title">Properties</div>
-            <div id="studio-inspector" class="studio-inspector"></div>
-          </div>
-        </div>
-        <div class="studio-center">
-          <div class="studio-toolbar">
-            <button class="btn btn-sm btn-outline" id="studio-overlay-toggle" title="Toggle result overlay">🟢 Show Results</button>
-            <button class="btn btn-sm btn-outline" onclick="window.ArchStudio?.clear()" title="Clear canvas">🗑️ Clear</button>
-            <span class="studio-zoom-label" id="studio-zoom-label">100%</span>
-          </div>
-          <canvas id="studio-canvas" class="studio-canvas"></canvas>
+      <div class="card">
+        <div class="card-header"><h2>Architecture Studio</h2></div>
+        <div class="card-body">
+          <div id="architecture-studio-container"></div>
         </div>
       </div>
     </section>
 
     <!-- ══════════ PARETO EXPLORER ══════════ -->
     <section class="page" id="page-pareto-explorer">
-      <div class="pareto-layout">
-        <div class="pareto-main">
-          <div class="card">
-            <div class="card-header">
-              <h2>Pareto Frontier</h2>
-              <div id="pareto-dims" class="pareto-dims"></div>
-            </div>
-            <div class="card-body" style="padding: 0;">
-              <canvas id="pareto-scatter-canvas" class="pareto-scatter-canvas"></canvas>
-            </div>
-          </div>
-          <div class="card" style="margin-top: 20px;">
-            <div class="card-header"><h2>Parallel Coordinates</h2></div>
-            <div class="card-body" style="padding: 0;">
-              <canvas id="pareto-pc-canvas" class="pareto-pc-canvas"></canvas>
-            </div>
-          </div>
-        </div>
-        <div class="pareto-sidebar">
-          <div class="card">
-            <div class="card-body" id="pareto-constraints"></div>
-          </div>
-          <div class="card" style="margin-top: 16px;">
-            <div class="card-header"><h2>Solution Inspector</h2></div>
-            <div class="card-body" id="pareto-detail"></div>
-          </div>
-          <div class="card" style="margin-top: 16px;">
-            <div class="card-body" id="pareto-sensitivity"></div>
-          </div>
+      <div class="card">
+        <div class="card-header"><h2>Pareto Explorer</h2></div>
+        <div class="card-body">
+          <div id="pareto-frontier-container"></div>
         </div>
       </div>
     </section>
 
     <!-- ══════════ CONTINUOUS DSE ══════════ -->
     <section class="page" id="page-continuous-dse">
-      <div id="dse-status-banner"></div>
-      <div class="dse-layout">
-        <div class="dse-main">
-          <div class="card">
-            <div class="card-header"><h2>📅 Session Timeline</h2></div>
-            <div class="card-body" id="dse-timeline"></div>
-          </div>
-          <div class="card" style="margin-top: 20px;">
-            <div class="card-header"><h2>🔄 Delta Analysis</h2></div>
-            <div class="card-body" id="dse-delta"></div>
-          </div>
-        </div>
-        <div class="dse-sidebar">
-          <div class="card">
+      <div class="card">
+        <div class="card-header"><h2>Continuous DSE</h2></div>
+        <div class="card-body">
+          <div id="incremental-dse-container"></div>
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header"><h2>DSE Sessions</h2></div>
             <div class="card-body" id="dse-sessions"></div>
           </div>
         </div>
@@ -524,5 +501,6 @@
   <script src="pareto_frontier.js"></script>
   <script src="incremental_dse.js"></script>
   <script src="app.js"></script>
+  <script src="runtime_fixes.js"></script>
 </body>
 </html>
