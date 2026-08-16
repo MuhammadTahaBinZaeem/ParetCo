@@ -420,3 +420,56 @@
 
     <!-- ══════════ ARCHITECTURE STUDIO ══════════ -->
     <section class="page" id="page-arch-studio">
+      <div class="studio-layout">
+        <div class="studio-left">
+          <div class="studio-tabs">
+            <button class="studio-tab active" data-tab="platform">🖥️ Platform</button>
+            <button class="studio-tab" data-tab="workload">📐 Workload</button>
+          </div>
+          <div class="studio-palette-container">
+            <div class="studio-palette-title">Components</div>
+            <div id="studio-palette" class="studio-palette"></div>
+          </div>
+          <div class="studio-inspector-container">
+            <div class="studio-inspector-title">Properties</div>
+            <div id="studio-inspector" class="studio-inspector"></div>
+          </div>
+        </div>
+        <div class="studio-center">
+          <div class="studio-toolbar">
+            <button class="btn btn-sm btn-outline" id="studio-overlay-toggle" title="Toggle result overlay">🟢 Show Results</button>
+            <button class="btn btn-sm btn-outline" onclick="window.ArchStudio?.clear()" title="Clear canvas">🗑️ Clear</button>
+            <span class="studio-zoom-label" id="studio-zoom-label">100%</span>
+          </div>
+          <canvas id="studio-canvas" class="studio-canvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ PARETO EXPLORER ══════════ -->
+    <section class="page" id="page-pareto-explorer">
+      <div class="pareto-layout">
+        <div class="pareto-main">
+          <div class="card">
+            <div class="card-header">
+              <h2>Pareto Frontier</h2>
+              <div id="pareto-dims" class="pareto-dims"></div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <canvas id="pareto-scatter-canvas" class="pareto-scatter-canvas"></canvas>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header"><h2>Parallel Coordinates</h2></div>
+            <div class="card-body" style="padding: 0;">
+              <canvas id="pareto-pc-canvas" class="pareto-pc-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="pareto-sidebar">
+          <div class="card">
+            <div class="card-body" id="pareto-constraints"></div>
+          </div>
+          <div class="card" style="margin-top: 16px;">
+            <div class="card-header"><h2>Solution Inspector</h2></div>
+            <div class="card-body" id="pareto-detail"></div>
