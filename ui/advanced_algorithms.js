@@ -1,592 +1,328 @@
 /**
  * ParetoCo Advanced Computational Algorithms & System Modeling Suite
  *
- * Implements:
- * 1. DvfsEnergyOptimizer: Convex Lagrangian optimization for Voltage/Frequency scaling & EDP minimization.
- * 2. MemoryHierarchyBufferSizer: DP 0/1 knapsack for scratchpad allocation, NUMA bank conflict matrix.
- * 3. RealTimeSchedulabilityAnalyzer: Exact Joseph-Pandya Response Time Analysis (RTA) & Hyperbolic Bounds.
- * 4. FaultToleranceReliabilityEngine: Poisson soft-error modeling, Primary-Backup replica synthesis & MTTF.
- * 5. Spea2MultiObjectiveOptimizer: Strength Pareto Evolutionary Algorithm with k-NN density & IGD metrics.
- * 6. NocWormholeSimulator: Flit-level virtual channel flow control, HoL blocking quantifier.
- * 7. IlpExactSynthesizer: Revised Simplex LP solver with Gomory Mixed-Integer Cut generation.
+ * Implemented algorithms:
+ * 1. DVFS energy/delay frequency allocation.
+ * 2. Scratchpad allocation via 0/1 dynamic programming and NUMA contention analysis.
+ * 3. Fixed-priority response-time analysis and hyperbolic schedulability bound.
+ * 4. Reliability/MTTF and primary-backup schedule calculations.
+ * 5. SPEA2 fitness, density, dominance and IGD metrics.
+ * 6. Deterministic XY-routing NoC traffic/load analysis.
+ * 7. Revised Simplex solver for continuous canonical linear programs.
  *
- * Author: ParetoCo Research Team
- * License: MIT
+ * Important: this file does NOT claim to implement Gomory cuts or a complete
+ * mixed-integer/ILP branch-and-bound solver. Integer design decisions are handled
+ * by ParetoCo's native constraint solver, not by the JavaScript Simplex helper.
  */
-
 (function(root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define([], factory);
-  } else if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
-  } else {
-    root.AdvancedAlgorithms = factory();
-  }
+  if (typeof define === 'function' && define.amd) define([], factory);
+  else if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.AdvancedAlgorithms = factory();
 }(typeof self !== 'undefined' ? self : this, function() {
   'use strict';
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 1. DVFS & ENERGY-DELAY PRODUCT (EDP) OPTIMIZER
-  // ═════════════════════════════════════════════════════════════════════════
   class DvfsEnergyOptimizer {
-    /**
-     * Minimizes Energy under deadline constraint using continuous frequency scaling:
-     * P(f) = P_static + C_eff * V(f)^2 * f, where V(f) = V_th + gamma * f
-     * Task execution time: t(f) = W / f
-     */
-    static optimizeTaskFrequencies(tasks, availableCores, totalDeadline, powerModels) {
-      // tasks: [{ id, cycles, assignedCore }]
-      // powerModels: { coreModel: { cEff, vTh, gamma, pStatic, fMin, fMax } }
-      const totalCycles = tasks.reduce((sum, t) => sum + t.cycles, 0);
-      if (totalDeadline <= 0 || totalCycles <= 0) return { error: 'Invalid parameters' };
-
-      // Analytical Lagrangian relaxation:
-      // Minimize \sum (P_static * t_i + C_eff * V_i^2 * cycles_i) s.t. \sum (cycles_i / f_i) <= totalDeadline
-      // The derivative of energy w.r.t time gives optimal equal-marginal energy cost per cycle.
-      const assignedFrequencies = {};
+    static optimizeTaskFrequencies(tasks, availableCores, totalDeadline, powerModels = {}) {
+      const totalCycles = (tasks || []).reduce((sum, task) => sum + Math.max(0, Number(task.cycles) || 0), 0);
+      if (!(totalDeadline > 0) || !(totalCycles > 0)) return { error: 'Invalid parameters' };
+      const allocations = {};
       let totalEnergy = 0;
       let totalTime = 0;
 
-      tasks.forEach(task => {
-        const pModel = powerModels[task.coreType] || {
-          cEff: 1.2e-9, vTh: 0.7, gamma: 0.5e-9, pStatic: 0.05, fMin: 200e6, fMax: 1500e6
+      for (const task of tasks || []) {
+        const model = powerModels[task.coreType] || { cEff: 1.2e-9, vTh: 0.7, gamma: 0.5e-9, pStatic: 0.05, fMin: 200e6, fMax: 1500e6 };
+        const cycles = Math.max(0, Number(task.cycles) || 0);
+        const targetTime = (cycles / totalCycles) * totalDeadline;
+        let frequency = targetTime > 0 ? cycles / targetTime : model.fMax;
+        frequency = Math.max(model.fMin, Math.min(model.fMax, frequency));
+        const voltage = model.vTh + model.gamma * frequency;
+        const dynamicPower = model.cEff * voltage * voltage * frequency;
+        const duration = cycles / frequency;
+        const energy = (model.pStatic + dynamicPower) * duration;
+        allocations[task.id] = {
+          frequencyHz: frequency,
+          voltageV: Number(voltage.toFixed(3)),
+          dynPowerW: Number(dynamicPower.toFixed(4)),
+          staticPowerW: model.pStatic,
+          durationSec: Number(duration.toFixed(6)),
+          energyJoules: Number(energy.toFixed(6))
         };
-
-        // Target baseline frequency satisfying proportional deadline allocation
-        const targetTime = (task.cycles / totalCycles) * totalDeadline;
-        let optFreq = task.cycles / targetTime;
-        optFreq = Math.max(pModel.fMin, Math.min(pModel.fMax, optFreq));
-
-        const voltage = pModel.vTh + pModel.gamma * optFreq;
-        const dynPower = pModel.cEff * Math.pow(voltage, 2) * optFreq;
-        const taskDuration = task.cycles / optFreq;
-        const energy = (pModel.pStatic + dynPower) * taskDuration;
-
-        assignedFrequencies[task.id] = {
-          frequencyHz: optFreq,
-          voltageV: parseFloat(voltage.toFixed(3)),
-          dynPowerW: parseFloat(dynPower.toFixed(4)),
-          staticPowerW: pModel.pStatic,
-          durationSec: parseFloat(taskDuration.toFixed(6)),
-          energyJoules: parseFloat(energy.toFixed(6))
-        };
-
         totalEnergy += energy;
-        totalTime += taskDuration;
-      });
+        totalTime += duration;
+      }
 
       return {
-        totalEnergyJoules: parseFloat(totalEnergy.toFixed(6)),
-        totalTimeSec: parseFloat(totalTime.toFixed(6)),
-        energyDelayProduct: parseFloat((totalEnergy * totalTime).toFixed(6)),
-        taskAllocations: assignedFrequencies
+        totalEnergyJoules: Number(totalEnergy.toFixed(6)),
+        totalTimeSec: Number(totalTime.toFixed(6)),
+        energyDelayProduct: Number((totalEnergy * totalTime).toFixed(6)),
+        taskAllocations: allocations
       };
     }
 
-    /**
-     * Compute state transition overhead between operating performance points (OPP)
-     */
     static calculateTransitionOverhead(fromOpp, toOpp, penaltyCoeffs = { latencySec: 15e-6, energyJ: 4.5e-6 }) {
-      const deltaF = Math.abs(fromOpp.freq - toOpp.freq) / 1e9;
-      const deltaV = Math.abs(fromOpp.volt - toOpp.volt);
+      const deltaF = Math.abs(Number(fromOpp.freq) - Number(toOpp.freq)) / 1e9;
+      const deltaV = Math.abs(Number(fromOpp.volt) - Number(toOpp.volt));
       return {
         latencyPenaltySec: penaltyCoeffs.latencySec * (1 + deltaF),
-        energyPenaltyJoules: penaltyCoeffs.energyJ * (1 + Math.pow(deltaV, 2))
+        energyPenaltyJoules: penaltyCoeffs.energyJ * (1 + deltaV * deltaV)
       };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 2. HETEROGENEOUS MEMORY HIERARCHY & SCRATCHPAD BUFFER SIZER
-  // ═════════════════════════════════════════════════════════════════════════
   class MemoryHierarchyBufferSizer {
-    /**
-     * 0/1 Knapsack Branch-and-Bound / Dynamic Programming for optimal Scratchpad Memory (SPM) allocation.
-     * Selects data blocks / communication buffers to fit in SPM of size `capacityBytes` to maximize latency savings.
-     */
     static allocateScratchpad(buffers, capacityBytes) {
-      // buffers: [{ id, sizeBytes, dramLatency, spmLatency, accessCount }]
-      const n = buffers.length;
-      if (n === 0 || capacityBytes <= 0) return { selected: [], totalSavings: 0, spmUsed: 0 };
-
-      // Benefit = (dramLatency - spmLatency) * accessCount
-      const items = buffers.map(b => ({
-        ...b,
-        benefit: Math.max(0, (b.dramLatency - b.spmLatency) * b.accessCount)
+      const items = (buffers || []).map(buffer => ({
+        ...buffer,
+        benefit: Math.max(0, (Number(buffer.dramLatency) - Number(buffer.spmLatency)) * Number(buffer.accessCount || 0))
       }));
+      const capacity = Math.max(0, Math.floor(Number(capacityBytes) || 0));
+      if (!items.length || !capacity) return { selectedBuffers: [], totalCycleSavings: 0, spmUsedBytes: 0, spmCapacityBytes: capacity, utilizationPct: 0 };
 
-      // DP Table (scaled to KB to prevent excessive table allocation)
-      const scale = 1;
-      const maxW = Math.floor(capacityBytes / scale);
-      const dp = Array.from({ length: n + 1 }, () => new Int32Array(maxW + 1));
-
-      for (let i = 1; i <= n; i++) {
-        const item = items[i - 1];
-        const wt = Math.ceil(item.sizeBytes / scale);
-        const val = item.benefit;
-        for (let w = 0; w <= maxW; w++) {
-          if (wt <= w) {
-            dp[i][w] = Math.max(dp[i - 1][w], dp[i - 1][w - wt] + val);
-          } else {
-            dp[i][w] = dp[i - 1][w];
-          }
+      const dp = Array.from({ length: items.length + 1 }, () => new Float64Array(capacity + 1));
+      for (let i = 1; i <= items.length; i++) {
+        const weight = Math.max(1, Math.ceil(Number(items[i - 1].sizeBytes) || 1));
+        const value = items[i - 1].benefit;
+        for (let w = 0; w <= capacity; w++) {
+          dp[i][w] = weight <= w ? Math.max(dp[i - 1][w], dp[i - 1][w - weight] + value) : dp[i - 1][w];
         }
       }
 
-      // Backtrack selected items
-      let currW = maxW;
       const selected = [];
-      let totalSpmUsed = 0;
-
-      for (let i = n; i > 0; i--) {
-        if (dp[i][currW] !== dp[i - 1][currW]) {
+      let used = 0;
+      let w = capacity;
+      for (let i = items.length; i > 0; i--) {
+        if (Math.abs(dp[i][w] - dp[i - 1][w]) > 1e-9) {
           selected.push(items[i - 1]);
-          const wt = Math.ceil(items[i - 1].sizeBytes / scale);
-          currW -= wt;
-          totalSpmUsed += items[i - 1].sizeBytes;
+          const weight = Math.max(1, Math.ceil(Number(items[i - 1].sizeBytes) || 1));
+          used += Number(items[i - 1].sizeBytes) || 0;
+          w -= weight;
         }
       }
-
       return {
-        selectedBuffers: selected.map(s => s.id),
-        totalCycleSavings: dp[n][maxW],
-        spmUsedBytes: totalSpmUsed,
-        spmCapacityBytes: capacityBytes,
-        utilizationPct: parseFloat(((totalSpmUsed / capacityBytes) * 100).toFixed(2))
+        selectedBuffers: selected.map(item => item.id),
+        totalCycleSavings: dp[items.length][capacity],
+        spmUsedBytes: used,
+        spmCapacityBytes: capacity,
+        utilizationPct: capacity ? Number(((used / capacity) * 100).toFixed(2)) : 0
       };
     }
 
-    /**
-     * Compute Non-Uniform Memory Access (NUMA) bank conflict penalty matrix
-     */
     static computeNumaBankContention(accessMatrix, bankBandwidthBps) {
-      // accessMatrix: core x bank -> traffic in bytes/sec
-      const numCores = accessMatrix.length;
+      if (!Array.isArray(accessMatrix) || !accessMatrix.length || !Array.isArray(accessMatrix[0])) return { bankContentionFactors: [], coreLatencyMultipliers: [] };
       const numBanks = accessMatrix[0].length;
-      const contentionFactors = Array(numBanks).fill(0);
-      const coreLatencyMultipliers = Array(numCores).fill(1.0);
-
-      for (let b = 0; b < numBanks; b++) {
-        let totalBankTraffic = 0;
-        for (let c = 0; c < numCores; c++) {
-          totalBankTraffic += accessMatrix[c][b];
-        }
-        if (totalBankTraffic > bankBandwidthBps) {
-          contentionFactors[b] = totalBankTraffic / bankBandwidthBps;
-        }
+      const factors = Array(numBanks).fill(0);
+      for (let bank = 0; bank < numBanks; bank++) {
+        const traffic = accessMatrix.reduce((sum, row) => sum + (Number(row[bank]) || 0), 0);
+        factors[bank] = traffic > bankBandwidthBps ? traffic / bankBandwidthBps : 0;
       }
-
-      for (let c = 0; c < numCores; c++) {
-        let maxCoreContention = 1.0;
-        for (let b = 0; b < numBanks; b++) {
-          if (accessMatrix[c][b] > 0 && contentionFactors[b] > maxCoreContention) {
-            maxCoreContention = contentionFactors[b];
-          }
-        }
-        coreLatencyMultipliers[c] = parseFloat(maxCoreContention.toFixed(3));
-      }
-
-      return { bankContentionFactors: contentionFactors, coreLatencyMultipliers };
+      const multipliers = accessMatrix.map(row => {
+        let max = 1;
+        row.forEach((traffic, bank) => { if (traffic > 0 && factors[bank] > max) max = factors[bank]; });
+        return Number(max.toFixed(3));
+      });
+      return { bankContentionFactors: factors, coreLatencyMultipliers: multipliers };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 3. REAL-TIME SCHEDULABILITY & RESPONSE TIME ANALYSIS (RTA)
-  // ═════════════════════════════════════════════════════════════════════════
   class RealTimeSchedulabilityAnalyzer {
-    /**
-     * Exact Joseph-Pandya Response Time Analysis with Priority Inversion Blocking:
-     * R_i^(k+1) = C_i + B_i + \sum_{j \in hp(i)} \lceil R_i^k / T_j \rceil * C_j
-     */
     static performRta(taskList) {
-      // taskList: [{ id, period, wcet, deadline, priority, blockingTime }]
-      // Sorted by priority descending (highest priority first)
-      const sorted = [...taskList].sort((a, b) => b.priority - a.priority);
+      const sorted = [...(taskList || [])].sort((a, b) => Number(b.priority) - Number(a.priority));
       const results = {};
       let allSchedulable = true;
-
       for (let i = 0; i < sorted.length; i++) {
         const task = sorted[i];
-        const Ci = task.wcet;
-        const Bi = task.blockingTime || 0;
-        const Di = task.deadline || task.period;
-        let R = Ci + Bi;
-        let converged = false;
+        const execution = Number(task.wcet) || 0;
+        const blocking = Number(task.blockingTime) || 0;
+        const deadline = Number(task.deadline || task.period) || 0;
+        let response = execution + blocking;
         let iterations = 0;
-        const maxIter = 100;
-
-        while (!converged && iterations < maxIter) {
-          iterations++;
+        while (iterations++ < 100) {
           let interference = 0;
           for (let j = 0; j < i; j++) {
-            const hpTask = sorted[j];
-            interference += Math.ceil(R / hpTask.period) * hpTask.wcet;
+            const hp = sorted[j];
+            interference += Math.ceil(response / Number(hp.period)) * Number(hp.wcet);
           }
-          const nextR = Ci + Bi + interference;
-          if (nextR === R) {
-            converged = true;
-          } else if (nextR > Di) {
-            R = nextR;
-            break;
-          } else {
-            R = nextR;
-          }
+          const next = execution + blocking + interference;
+          if (next === response || next > deadline) { response = next; break; }
+          response = next;
         }
-
-        const isSchedulable = R <= Di;
-        if (!isSchedulable) allSchedulable = false;
-
-        results[task.id] = {
-          wcet: Ci,
-          period: task.period,
-          deadline: Di,
-          responseTime: R,
-          blocking: Bi,
-          isSchedulable,
-          slack: Di - R,
-          iterations
-        };
+        const schedulable = response <= deadline;
+        allSchedulable &&= schedulable;
+        results[task.id] = { wcet: execution, period: task.period, deadline, responseTime: response, blocking, isSchedulable: schedulable, slack: deadline - response, iterations };
       }
-
-      // Compute hyperbolic bound (Bini & Buttazzo): \prod (U_i + 1) <= 2
-      let hyperbolicProduct = 1.0;
-      let totalUtilization = 0;
-      taskList.forEach(t => {
-        const u = t.wcet / t.period;
-        totalUtilization += u;
-        hyperbolicProduct *= (u + 1.0);
-      });
-
+      let hyperbolic = 1;
+      let utilization = 0;
+      for (const task of taskList || []) {
+        const u = Number(task.wcet) / Number(task.period);
+        if (Number.isFinite(u)) { utilization += u; hyperbolic *= 1 + u; }
+      }
       return {
         allSchedulable,
-        totalUtilization: parseFloat(totalUtilization.toFixed(4)),
-        hyperbolicBoundPassed: hyperbolicProduct <= 2.0,
-        hyperbolicValue: parseFloat(hyperbolicProduct.toFixed(4)),
+        totalUtilization: Number(utilization.toFixed(4)),
+        hyperbolicBoundPassed: hyperbolic <= 2,
+        hyperbolicValue: Number(hyperbolic.toFixed(4)),
         taskAnalysis: results
       };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 4. FAULT-TOLERANCE & RELIABILITY (MTTF) ESTIMATION ENGINE
-  // ═════════════════════════════════════════════════════════════════════════
   class FaultToleranceReliabilityEngine {
-    /**
-     * Frequency-dependent transient fault rate:
-     * \lambda(f, V) = \lambda_0 * 10^{\frac{d(1 - f)}{1 - f_min}}
-     * Task Reliability: R_task = e^{-\lambda(f, V) * duration}
-     */
-    static computeTaskReliability(durationSec, freqNorm, lambda0 = 1e-6, dFactor = 2.0) {
-      const lambda = lambda0 * Math.pow(10, dFactor * (1.0 - freqNorm));
+    static computeTaskReliability(durationSec, freqNorm, lambda0 = 1e-6, dFactor = 2) {
+      const lambda = lambda0 * Math.pow(10, dFactor * (1 - freqNorm));
       const reliability = Math.exp(-lambda * durationSec);
-      return {
-        failureRateLambda: lambda,
-        taskReliability: parseFloat(reliability.toFixed(8)),
-        unreliability: parseFloat((1.0 - reliability).toExponential(4))
-      };
+      return { failureRateLambda: lambda, taskReliability: Number(reliability.toFixed(8)), unreliability: Number((1 - reliability).toExponential(4)) };
     }
 
-    /**
-     * Primary-Backup (PB) overlapping replica schedule synthesis
-     */
     static synthesizePrimaryBackupSchedule(tasks) {
-      // Generates backup replica with disjoint processor placement
-      const schedule = [];
-      tasks.forEach(task => {
-        schedule.push({
-          taskId: task.id,
-          type: 'PRIMARY',
-          processorId: task.primaryCore,
-          startTime: task.startTime,
-          endTime: task.startTime + task.duration
-        });
-        schedule.push({
-          taskId: task.id,
-          type: 'BACKUP',
-          processorId: task.backupCore,
-          startTime: task.startTime + task.duration, // Overlapping / deferred execution
-          endTime: task.startTime + 2 * task.duration
-        });
-      });
-      return schedule;
+      return (tasks || []).flatMap(task => [
+        { taskId: task.id, type: 'PRIMARY', processorId: task.primaryCore, startTime: task.startTime, endTime: task.startTime + task.duration },
+        { taskId: task.id, type: 'BACKUP', processorId: task.backupCore, startTime: task.startTime + task.duration, endTime: task.startTime + 2 * task.duration }
+      ]);
     }
 
-    /**
-     * System-level Mean Time To Failure (MTTF) in hours
-     */
     static calculateSystemMttf(componentFailureRatesPerHour) {
-      const totalSystemLambda = componentFailureRatesPerHour.reduce((sum, r) => sum + r, 0);
-      if (totalSystemLambda <= 0) return Infinity;
-      const mttfHours = 1.0 / totalSystemLambda;
-      return {
-        totalFailureRatePerHour: totalSystemLambda,
-        mttfHours: parseFloat(mttfHours.toFixed(2)),
-        mttfYears: parseFloat((mttfHours / (24 * 365.25)).toFixed(2))
-      };
+      const lambda = (componentFailureRatesPerHour || []).reduce((sum, value) => sum + Number(value || 0), 0);
+      if (lambda <= 0) return Infinity;
+      const hours = 1 / lambda;
+      return { totalFailureRatePerHour: lambda, mttfHours: Number(hours.toFixed(2)), mttfYears: Number((hours / (24 * 365.25)).toFixed(2)) };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 5. STRENGTH PARETO EVOLUTIONARY ALGORITHM (SPEA2) & IGD METRICS
-  // ═════════════════════════════════════════════════════════════════════════
   class Spea2MultiObjectiveOptimizer {
-    /**
-     * Fine-grained SPEA2 fitness assignment:
-     * S(i) = |{ j | j \in P \cup \bar{P} \land i \succ j }|
-     * Raw(i) = \sum_{j \succ i} S(j)
-     * Density D(i) = 1 / (\sigma_i^k + 2)
-     * Fitness F(i) = Raw(i) + D(i)
-     */
-    static computeSpea2Fitness(population, kNeighbor = 1) {
-      const n = population.length;
-      if (n === 0) return [];
-      const strength = new Int32Array(n);
-      const rawFitness = new Float64Array(n);
-      const fitness = new Float64Array(n);
-
-      // 1. Calculate Strength S(i)
-      for (let i = 0; i < n; i++) {
-        let count = 0;
-        for (let j = 0; j < n; j++) {
-          if (i !== j && this.dominates(population[i].objectives, population[j].objectives)) {
-            count++;
-          }
-        }
-        strength[i] = count;
+    static dominates(a, b) {
+      let better = false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] > b[i]) return false;
+        if (a[i] < b[i]) better = true;
       }
-
-      // 2. Calculate Raw Fitness
-      for (let i = 0; i < n; i++) {
-        let sumS = 0;
-        for (let j = 0; j < n; j++) {
-          if (i !== j && this.dominates(population[j].objectives, population[i].objectives)) {
-            sumS += strength[j];
-          }
-        }
-        rawFitness[i] = sumS;
-      }
-
-      // 3. Density estimation via k-th nearest neighbor
-      for (let i = 0; i < n; i++) {
-        const distances = [];
-        for (let j = 0; j < n; j++) {
-          if (i !== j) {
-            distances.push(this.euclideanDistance(population[i].objectives, population[j].objectives));
-          }
-        }
-        distances.sort((a, b) => a - b);
-        const kDist = distances[Math.min(kNeighbor - 1, distances.length - 1)] || 0;
-        const density = 1.0 / (kDist + 2.0);
-        fitness[i] = rawFitness[i] + density;
-      }
-
-      return population.map((ind, idx) => ({
-        ...ind,
-        spea2Fitness: parseFloat(fitness[idx].toFixed(6)),
-        rawFitness: rawFitness[idx],
-        isNonDominated: rawFitness[idx] === 0
-      }));
-    }
-
-    /**
-     * Inverted Generational Distance (IGD) metric against known reference front
-     */
-    static calculateIgd(obtainedFront, referenceFront) {
-      if (!obtainedFront.length || !referenceFront.length) return 0;
-      let totalDist = 0;
-      referenceFront.forEach(refPoint => {
-        let minDist = Infinity;
-        obtainedFront.forEach(sol => {
-          const d = this.euclideanDistance(sol.objectives || sol, refPoint.objectives || refPoint);
-          if (d < minDist) minDist = d;
-        });
-        totalDist += minDist;
-      });
-      return parseFloat((totalDist / referenceFront.length).toFixed(6));
-    }
-
-    static dominates(objA, objB) {
-      let atLeastOneBetter = false;
-      for (let i = 0; i < objA.length; i++) {
-        if (objA[i] > objB[i]) return false; // Assuming minimization
-        if (objA[i] < objB[i]) atLeastOneBetter = true;
-      }
-      return atLeastOneBetter;
+      return better;
     }
 
     static euclideanDistance(a, b) {
-      let sum = 0;
-      for (let i = 0; i < a.length; i++) {
-        sum += Math.pow(a[i] - b[i], 2);
+      return Math.sqrt(a.reduce((sum, value, index) => sum + Math.pow(value - b[index], 2), 0));
+    }
+
+    static computeSpea2Fitness(population, kNeighbor = 1) {
+      const n = population?.length || 0;
+      if (!n) return [];
+      const strength = new Int32Array(n);
+      const raw = new Float64Array(n);
+      const fitness = new Float64Array(n);
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (i !== j && this.dominates(population[i].objectives, population[j].objectives)) strength[i]++;
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (i !== j && this.dominates(population[j].objectives, population[i].objectives)) raw[i] += strength[j];
+      for (let i = 0; i < n; i++) {
+        const distances = [];
+        for (let j = 0; j < n; j++) if (i !== j) distances.push(this.euclideanDistance(population[i].objectives, population[j].objectives));
+        distances.sort((a, b) => a - b);
+        const kth = distances[Math.min(Math.max(0, kNeighbor - 1), distances.length - 1)] || 0;
+        fitness[i] = raw[i] + 1 / (kth + 2);
       }
-      return Math.sqrt(sum);
+      return population.map((individual, index) => ({ ...individual, spea2Fitness: Number(fitness[index].toFixed(6)), rawFitness: raw[index], isNonDominated: raw[index] === 0 }));
+    }
+
+    static calculateIgd(obtainedFront, referenceFront) {
+      if (!obtainedFront?.length || !referenceFront?.length) return 0;
+      const total = referenceFront.reduce((sum, ref) => {
+        const point = ref.objectives || ref;
+        const minDistance = Math.min(...obtainedFront.map(sol => this.euclideanDistance(sol.objectives || sol, point)));
+        return sum + minDistance;
+      }, 0);
+      return Number((total / referenceFront.length).toFixed(6));
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 6. NOC WORMHOLE ROUTING & VIRTUAL CHANNEL CONTENTION SIMULATOR
-  // ═════════════════════════════════════════════════════════════════════════
   class NocWormholeSimulator {
-    /**
-     * Flit-level credit-based Virtual Channel (VC) contention analyzer.
-     * Evaluates Head-of-Line (HoL) blocking probability and zero-load packet latency.
-     */
     static simulateMeshTraffic(dimX, dimY, packetFlows, virtualChannelsPerPort = 2) {
-      // packetFlows: [{ src: {x,y}, dst: {x,y}, packetSizeBytes, injectionRate }]
       const linkUtilization = {};
       let totalHops = 0;
-      let maxLinkLoad = 0;
-
-      packetFlows.forEach(flow => {
-        // XY Dimension-Order Routing
-        let curX = flow.src.x;
-        let curY = flow.src.y;
+      for (const flow of packetFlows || []) {
+        let x = flow.src.x;
+        let y = flow.src.y;
         let hops = 0;
-
-        // X-Direction routing
-        while (curX !== flow.dst.x) {
-          const nextX = curX < flow.dst.x ? curX + 1 : curX - 1;
-          const linkKey = `(${curX},${curY})->(${nextX},${curY})`;
-          linkUtilization[linkKey] = (linkUtilization[linkKey] || 0) + flow.packetSizeBytes * flow.injectionRate;
-          curX = nextX;
-          hops++;
+        while (x !== flow.dst.x) {
+          const nx = x < flow.dst.x ? x + 1 : x - 1;
+          const key = `(${x},${y})->(${nx},${y})`;
+          linkUtilization[key] = (linkUtilization[key] || 0) + flow.packetSizeBytes * flow.injectionRate;
+          x = nx; hops++;
         }
-
-        // Y-Direction routing
-        while (curY !== flow.dst.y) {
-          const nextY = curY < flow.dst.y ? curY + 1 : curY - 1;
-          const linkKey = `(${curX},${curY})->(${curX},${nextY})`;
-          linkUtilization[linkKey] = (linkUtilization[linkKey] || 0) + flow.packetSizeBytes * flow.injectionRate;
-          curY = nextY;
-          hops++;
+        while (y !== flow.dst.y) {
+          const ny = y < flow.dst.y ? y + 1 : y - 1;
+          const key = `(${x},${y})->(${x},${ny})`;
+          linkUtilization[key] = (linkUtilization[key] || 0) + flow.packetSizeBytes * flow.injectionRate;
+          y = ny; hops++;
         }
-
         totalHops += hops;
-      });
-
-      Object.values(linkUtilization).forEach(load => {
-        if (load > maxLinkLoad) maxLinkLoad = load;
-      });
-
-      const avgHops = packetFlows.length > 0 ? (totalHops / packetFlows.length).toFixed(2) : 0;
-      const bisectionBandwidthGBps = (dimX * 32 * 1.5).toFixed(1); // 32-bit flits @ 1.5 GHz
-
+      }
+      const loads = Object.values(linkUtilization);
+      const maxLinkLoad = loads.length ? Math.max(...loads) : 0;
       return {
         dimension: `${dimX}x${dimY}`,
-        totalFlows: packetFlows.length,
-        averageHopCount: parseFloat(avgHops),
-        bisectionBandwidthGBps: parseFloat(bisectionBandwidthGBps),
+        totalFlows: packetFlows?.length || 0,
+        averageHopCount: packetFlows?.length ? Number((totalHops / packetFlows.length).toFixed(2)) : 0,
+        bisectionBandwidthGBps: Number((dimX * 32 * 1.5).toFixed(1)),
         maxLinkLoadBytesPerSec: maxLinkLoad,
-        congestedLinksCount: Object.values(linkUtilization).filter(l => l > maxLinkLoad * 0.8).length,
+        congestedLinksCount: loads.filter(load => maxLinkLoad > 0 && load > maxLinkLoad * 0.8).length,
         virtualChannelsPerPort
       };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // 7. EXACT INTEGER LINEAR PROGRAMMING (ILP) BRANCH-AND-BOUND SYNTHESIZER
-  // ═════════════════════════════════════════════════════════════════════════
-  class IlpExactSynthesizer {
-    /**
-     * Simplex LP Solver for Canonical Form:
-     * Maximize c^T x s.t. A x <= b, x >= 0
-     */
+  class LinearProgrammingSimplexSolver {
+    /** Solve max c^T x subject to A x <= b and x >= 0. Continuous LP only. */
     static solveSimplex(c, A, b) {
-      const m = A.length;    // Constraints count
-      const n = c.length;    // Variables count
-
-      // Construct Initial Tableau: [ A | I | b ]
-      // Tableau size: (m + 1) x (n + m + 1)
+      const m = A.length;
+      const n = c.length;
+      if (b.some(value => Number(value) < 0)) return { status: 'UNSUPPORTED_INITIAL_BASIS', objective: null, solution: [] };
       const tableau = Array.from({ length: m + 1 }, () => new Float64Array(n + m + 1));
-
       for (let i = 0; i < m; i++) {
-        for (let j = 0; j < n; j++) tableau[i][j] = A[i][j];
-        tableau[i][n + i] = 1.0; // Slack variable
-        tableau[i][n + m] = b[i]; // RHS
+        for (let j = 0; j < n; j++) tableau[i][j] = Number(A[i][j]) || 0;
+        tableau[i][n + i] = 1;
+        tableau[i][n + m] = Number(b[i]) || 0;
       }
+      for (let j = 0; j < n; j++) tableau[m][j] = -(Number(c[j]) || 0);
 
-      for (let j = 0; j < n; j++) {
-        tableau[m][j] = -c[j]; // Objective row
-      }
-
-      // Simplex Pivoting Loop
       let iterations = 0;
-      const maxIter = 200;
-
-      while (iterations++ < maxIter) {
-        // 1. Find pivot column (most negative in bottom row)
+      while (iterations++ < 200) {
         let pivotCol = -1;
-        let minVal = -1e-9;
+        let mostNegative = -1e-9;
         for (let j = 0; j < n + m; j++) {
-          if (tableau[m][j] < minVal) {
-            minVal = tableau[m][j];
-            pivotCol = j;
-          }
+          if (tableau[m][j] < mostNegative) { mostNegative = tableau[m][j]; pivotCol = j; }
         }
+        if (pivotCol === -1) break;
 
-        if (pivotCol === -1) break; // Optimal found
-
-        // 2. Find pivot row (minimum ratio test)
         let pivotRow = -1;
-        let minRatio = Infinity;
+        let ratio = Infinity;
         for (let i = 0; i < m; i++) {
           if (tableau[i][pivotCol] > 1e-9) {
-            const ratio = tableau[i][n + m] / tableau[i][pivotCol];
-            if (ratio < minRatio) {
-              minRatio = ratio;
-              pivotRow = i;
-            }
+            const candidate = tableau[i][n + m] / tableau[i][pivotCol];
+            if (candidate < ratio) { ratio = candidate; pivotRow = i; }
           }
         }
+        if (pivotRow === -1) return { status: 'UNBOUNDED', objective: Infinity, solution: [] };
 
-        if (pivotRow === -1) return { status: 'UNBOUNDED', objective: Infinity };
-
-        // 3. Perform Jordan Pivot
-        const pivotVal = tableau[pivotRow][pivotCol];
-        for (let j = 0; j <= n + m; j++) {
-          tableau[pivotRow][j] /= pivotVal;
-        }
-
+        const pivot = tableau[pivotRow][pivotCol];
+        for (let j = 0; j <= n + m; j++) tableau[pivotRow][j] /= pivot;
         for (let i = 0; i <= m; i++) {
-          if (i !== pivotRow) {
-            const factor = tableau[i][pivotCol];
-            for (let j = 0; j <= n + m; j++) {
-              tableau[i][j] -= factor * tableau[pivotRow][j];
-            }
-          }
+          if (i === pivotRow) continue;
+          const factor = tableau[i][pivotCol];
+          for (let j = 0; j <= n + m; j++) tableau[i][j] -= factor * tableau[pivotRow][j];
         }
       }
 
-      // Extract basic solution values
-      const x = new Float64Array(n);
+      const solution = Array(n).fill(0);
       for (let j = 0; j < n; j++) {
-        let isBasic = true;
-        let basicRow = -1;
+        let row = -1;
+        let basic = true;
         for (let i = 0; i < m; i++) {
-          if (Math.abs(tableau[i][j] - 1.0) < 1e-6 && basicRow === -1) {
-            basicRow = i;
-          } else if (Math.abs(tableau[i][j]) > 1e-6) {
-            isBasic = false;
-            break;
-          }
+          if (Math.abs(tableau[i][j] - 1) < 1e-6 && row === -1) row = i;
+          else if (Math.abs(tableau[i][j]) > 1e-6) { basic = false; break; }
         }
-        if (isBasic && basicRow !== -1) {
-          x[j] = parseFloat(tableau[basicRow][n + m].toFixed(4));
-        }
+        if (basic && row !== -1) solution[j] = Number(tableau[row][n + m].toFixed(4));
       }
-
-      return {
-        status: 'OPTIMAL',
-        objective: parseFloat(tableau[m][n + m].toFixed(4)),
-        solution: Array.from(x),
-        iterations
-      };
+      return { status: 'OPTIMAL', objective: Number(tableau[m][n + m].toFixed(4)), solution, iterations };
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // EXPORTS
-  // ═════════════════════════════════════════════════════════════════════════
   return {
     DvfsEnergyOptimizer,
     MemoryHierarchyBufferSizer,
@@ -594,6 +330,8 @@
     FaultToleranceReliabilityEngine,
     Spea2MultiObjectiveOptimizer,
     NocWormholeSimulator,
-    IlpExactSynthesizer
+    LinearProgrammingSimplexSolver,
+    // Backward-compatible alias; deprecated because this helper is not a full ILP solver.
+    IlpExactSynthesizer: LinearProgrammingSimplexSolver
   };
 }));
