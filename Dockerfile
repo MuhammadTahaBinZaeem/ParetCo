@@ -19,7 +19,7 @@ COPY ai_features/package.json ai_features/package-lock.json ./ai_features/
 RUN npm ci --omit=dev --prefix ./ai_features
 
 COPY package.json package-lock.json ./
-COPY server.js start.js preflight.js ./
+COPY server.js start.js preflight.js app_preflight.js ./
 COPY ui/ ./ui/
 COPY ai_features/ ./ai_features/
 COPY paretoco-engine-release/ ./paretoco-engine-release/
@@ -36,11 +36,12 @@ ENV NODE_ENV=production \
     PARETOCO_ENGINE=/app/paretoco-engine-release/paretoco-engine.exe \
     WINEDEBUG=-all,err+all \
     PARETOCO_WINEDEBUG=-all,err+all \
+    PARETOCO_NATIVE_TIMEOUT_MS=60000 \
     WINEARCH=win64 \
     WINEPREFIX=/tmp/paretoco-wine
 
 EXPOSE 10000
 
-# Initialize a writable 64-bit Wine prefix, apply app-layer compatibility
-# repairs, then start the diagnostic bootstrap. Native engine files are untouched.
-CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node preflight.js"]
+# Initialize a writable 64-bit Wine prefix, repair app-layer integrations, then
+# start the existing production/bootstrap diagnostics. Native engine untouched.
+CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node app_preflight.js"]
