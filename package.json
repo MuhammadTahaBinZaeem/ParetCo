@@ -4,8 +4,8 @@
   "description": "ParetoCo native/analytical design-space exploration, architecture analysis, and multi-objective optimization platform",
   "main": "server.js",
   "scripts": {
-    "start": "node round3_preflight.js",
-    "dev": "node round3_preflight.js",
+    "start": "node round4_preflight.js",
+    "dev": "node round4_preflight.js",
     "test": "python tests/run_30_tests.py",
     "test:smoke": "python tests/run_30_tests.py 1,2,3"
   },
