@@ -784,3 +784,75 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (pathname === '/api/ai/unsat-doctor' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { constraints, platform, applications, messages } = JSON.parse(body);
+        const { analyzeUnsatAgent } = require('./ai_features/unsat_doctor');
+        
+        let chatMessages = messages || [
+           { role: "system", content: "You are an AI Constraint Repair / Unsat Doctor." },
+           { role: "user", content: `0 Solutions Found.\nConstraints: ${JSON.stringify(constraints)}\nPlatform: ${JSON.stringify(platform)}\nApps: ${JSON.stringify(applications)}\n\nTest repairs using the tool before presenting.` }
+        ];
+
+        const logs = [];
+        const result = await analyzeUnsatAgent(chatMessages, (log) => logs.push(log));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...result, logs, messages: chatMessages }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // Static File Serving from /ui
+  let safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
+  if (safePath === '/' || safePath === '\\') safePath = '/index.html';
+
+  const filePath = path.join(UI_DIR, safePath);
+
+  fs.stat(filePath, (err, stats) => {
+    if (err || !stats.isFile()) {
+      // Fallback to index.html for client-side routing
+      const indexPath = path.join(UI_DIR, 'index.html');
+      fs.readFile(indexPath, (readErr, content) => {
+        if (readErr) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('404 Not Found');
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(content);
+        }
+      });
+      return;
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    res.writeHead(200, { 'Content-Type': contentType });
+    fs.createReadStream(filePath).pipe(res);
+  });
+});
+
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`====================================================`);
+    console.log(`  ParetoCo Web Dashboard & Engine Server`);
+    console.log(`  Running on http://localhost:${PORT}`);
+    console.log(`  Native Engine: ${nativeEngineLabel(findNativeEngine())}`);
+    console.log(`  Native Required: ${nativeRequired()}`);
+    console.log(`====================================================`);
+  });
+}
+
+module.exports = server;
