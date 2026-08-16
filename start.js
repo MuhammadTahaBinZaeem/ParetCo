@@ -117,6 +117,25 @@ function applyDemoPresetCompatibilityFix() {
     console.log('[ai-fix] NL-to-DSE now writes into state.dse.');
   }
 
+  const oldAiConstraintLine = '          if (data.model.constraints) state.constraints = data.model.constraints;';
+  const newAiConstraintBlock = [
+    '          if (data.model.constraints) state.constraints = data.model.constraints;',
+    '          if (data.model.sysConstraints) {',
+    '            Object.assign(state.sysConstraints, data.model.sysConstraints);',
+    '            const sysFields = { power: "sys-power", utilization: "sys-utilization", area: "sys-area", cost: "sys-cost", procsUsed: "sys-procs" };',
+    '            Object.entries(sysFields).forEach(([key, id]) => {',
+    '              const el = document.getElementById(id);',
+    '              const value = Number(state.sysConstraints[key]);',
+    '              if (el) el.value = Number.isFinite(value) && value > 0 ? String(value) : "";',
+    '            });',
+    '          }'
+  ].join('\n');
+  if (!source.includes(newAiConstraintBlock) && source.includes(oldAiConstraintLine)) {
+    source = source.replace(oldAiConstraintLine, newAiConstraintBlock);
+    changed = true;
+    console.log('[ai-fix] NL-to-DSE system constraints now populate state and visible fields.');
+  }
+
   if (changed) fs.writeFileSync(appPath, source, 'utf8');
 }
 
@@ -245,6 +264,47 @@ function runSmokeTests() {
   }, 800).unref?.();
 }
 
+function runAiSmokeTest() {
+  const hasKey = Boolean(process.env.FEATHERLESS_API_KEY || process.env.featherless);
+  if (!hasKey) {
+    console.warn('[ai-smoke] SKIP: Featherless API key is not configured.');
+    return;
+  }
+
+  const payload = JSON.stringify({
+    prompt: 'Create a minimal DSE model with two ARM cores and two actors a0 then a1. WCETs are 10 and 20 cycles. Period deadline is 100 cycles.'
+  });
+  const request = http.request({
+    hostname: '127.0.0.1',
+    port: Number(PORT),
+    path: '/api/ai/nl-to-dse',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    timeout: 32_000
+  }, response => {
+    let body = '';
+    response.on('data', chunk => { body += chunk.toString(); });
+    response.on('end', () => {
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch (_) {}
+      const validModel = Array.isArray(parsed?.model?.platform?.processors) && parsed.model.platform.processors.length > 0;
+      if (response.statusCode >= 200 && response.statusCode < 300 && !parsed.error && validModel) {
+        console.log('[ai-smoke] PASS: Featherless NL-to-DSE returned a valid structured model.');
+      } else {
+        console.error(`[ai-smoke] FAIL: HTTP ${response.statusCode}`);
+        console.error(`[ai-smoke] ${parsed.error || parsed.question || tail(body, 1500) || 'invalid model response'}`);
+      }
+    });
+  });
+  request.on('timeout', () => {
+    console.error('[ai-smoke] FAIL: request timed out');
+    request.destroy();
+  });
+  request.on('error', err => console.error(`[ai-smoke] FAIL: ${err.message}`));
+  request.write(payload);
+  request.end();
+}
+
 const server = require('./server');
 server.listen(PORT, HOST, () => {
   console.log('====================================================');
@@ -254,4 +314,5 @@ server.listen(PORT, HOST, () => {
   console.log('  Bridge reliability fixes: enabled (native engine unchanged)');
   console.log('====================================================');
   setTimeout(runSmokeTests, 500).unref?.();
+  setTimeout(runAiSmokeTest, 2_500).unref?.();
 });
