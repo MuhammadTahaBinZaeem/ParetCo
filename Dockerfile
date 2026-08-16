@@ -22,6 +22,11 @@ COPY server.js ./
 COPY server/ ./server/
 COPY ui/ ./ui/
 COPY ai_features/ ./ai_features/
+
+# Catch JavaScript syntax/integration mistakes during image build, before Render
+# ever tries to start the service.
+RUN npm run check
+
 COPY paretoco-engine-release/ ./paretoco-engine-release/
 COPY benchmarks/ ./benchmarks/
 
