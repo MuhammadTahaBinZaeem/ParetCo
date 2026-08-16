@@ -498,3 +498,75 @@ async function handleLaunchRequest(req, res, body) {
     if (constraintsXml) {
       fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);
     }
+
+    // Write config.cfg
+    const dseCriteria = jobData.dse?.criteria ? jobData.dse.criteria.toUpperCase() : 'THROUGHPUT';
+    const dseProp = jobData.dse?.th_prop ? jobData.dse.th_prop.toUpperCase() : 'SSE';
+    const dseSearch = jobData.dse?.search ? jobData.dse.search.toUpperCase() : 'FIRST';
+    
+    let configCfg = '';
+    sdfFiles.forEach(sf => { configCfg += `inputs = ${sf}\n`; });
+    configCfg += `inputs = platform.xml\ninputs = wcets.xml\n`;
+    if (constraintsXml) {
+      configCfg += `inputs = desConst.xml\ndesign_constraints_file=desConst.xml\n`;
+    }
+    configCfg += `\n[dse]\nmodel = SDF_PR_ONLINE\ncriteria = ${dseCriteria}\nsearch = ${dseSearch}\nth_prop = ${dseProp}\n`;
+    fs.writeFileSync(path.join(tempDir, 'config.cfg'), configCfg);
+
+    // Prepare execution environment. DLLs stay beside the packaged .exe; Wine's
+    // Windows loader searches the executable directory for those dependencies.
+    const env = Object.assign({}, process.env);
+    const engineDir = path.dirname(nativeEngine.enginePath);
+    if (process.platform === 'win32') {
+      env.PATH = `${engineDir}${path.delimiter}${env.PATH || ''}`;
+    } else if (nativeEngine.mode === 'wine') {
+      env.WINEDEBUG = env.WINEDEBUG || '-all';
+      env.WINEARCH = env.WINEARCH || 'win64';
+      env.WINEPREFIX = env.WINEPREFIX || path.join(os.tmpdir(), 'paretoco-wine');
+    }
+
+    const child = spawn(
+      nativeEngine.command,
+      [...nativeEngine.prefixArgs, '--config', 'config.cfg'],
+      { cwd: tempDir, env }
+    );
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    child.on('close', (code) => {
+      let outTxt = '';
+      let outCsv = '';
+      const outTxtPath = path.join(tempDir, 'out', 'out.txt');
+      const outCsvPath = path.join(tempDir, 'out', 'out.csv');
+
+      if (fs.existsSync(outTxtPath)) outTxt = fs.readFileSync(outTxtPath, 'utf8');
+      if (fs.existsSync(outCsvPath)) outCsv = fs.readFileSync(outCsvPath, 'utf8');
+
+      // Clean up temp directory
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) {}
+
+      // Check if active user constraints require post-filtering
+      let minAllowedPeriod = Infinity;
+      (jobData.constraints || []).forEach(c => {
+        const pVal = parseInt(c.period, 10);
+        if (!isNaN(pVal) && pVal > 0 && pVal < minAllowedPeriod) {
+          minAllowedPeriod = pVal;
+        }
+      });
+
+      const maxAllowedPower = (jobData.sysConstraints?.power > 0)
+        ? parseFloat(jobData.sysConstraints.power)
+        : ((jobData.sysConstraints?.maxPower && jobData.sysConstraints.maxPower !== "Unlimited") ? parseFloat(jobData.sysConstraints.maxPower) : Infinity);
+
+      if (code === 0 && outTxt) {
+        let solutionsViolated = false;
+        let violationMsg = "";
+
+        if (minAllowedPeriod < Infinity) {
+          const periodsFound = [...outTxt.matchAll(/Period:\s*\{?(\d+)\}?/gi)].map(m => parseInt(m[1], 10));
+          const validPeriods = periodsFound.filter(p => p <= minAllowedPeriod);
+          if (periodsFound.length > 0 && validPeriods.length === 0) {
