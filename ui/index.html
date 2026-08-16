@@ -367,3 +367,56 @@
             <button class="btn btn-sm btn-outline" id="btn-copy-config">Copy</button>
             <button class="btn btn-sm btn-primary" id="btn-download-config">Download</button>
           </div>
+        </div>
+        <div class="card-body">
+          <pre class="config-preview" id="config-preview"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ RESULTS ══════════ -->
+    <section class="page" id="page-results">
+      <div class="card">
+        <div class="card-header">
+          <h2>Optimization Results</h2>
+          <button class="btn btn-sm btn-outline" id="btn-load-results">Load out.txt / out.csv</button>
+        </div>
+        <div class="card-body">
+          <div class="empty-state" id="results-empty"><p>No results yet. Run a DSE or load existing <code>out.txt</code> / <code>out.csv</code> files.</p></div>
+          <div id="results-content" class="hidden">
+            <div class="results-summary" id="results-summary"></div>
+            <canvas id="results-chart" width="800" height="300"></canvas>
+            <table id="results-table"><thead id="results-thead"></thead><tbody id="results-tbody"></tbody></table>
+            
+            <div id="unsat-doctor-container" class="hidden" style="margin-top: 24px; padding: 20px; background: #FFD1DC; border: 1px solid #B6CBE0; border-radius: 8px;">
+              <h3 style="color: #1E293B; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                <div class="img-container" style="display: flex; justify-content: center; align-items: center; overflow: hidden; background-color: #B6CBE0; border-radius: 4px; width: 28px; height: 28px; flex-shrink: 0;"><img src="/assets/flat-warning.png" alt="Warning" style="max-width: 100%; max-height: 100%; object-fit: contain;"></div>
+                0 Feasible Solutions Detected
+              </h3>
+              <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">The engine could not find any valid mapping that satisfies all constraints. Use the Unsat Doctor to diagnose the bottleneck and propose repairs.</p>
+              <button class="btn btn-danger" id="btn-unsat-doctor" onclick="paretoco.diagnoseUnsat()">🩺 Diagnose & Propose Repairs</button>
+              <div id="unsat-doctor-options" style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ AI ANALYST ══════════ -->
+    <section class="page" id="page-ai-analyst">
+      <div class="card">
+        <div class="card-header">
+          <h2>Featherless AI Insights</h2>
+          <button class="btn btn-sm btn-primary" id="btn-generate-insights" onclick="paretoco.generateInsights()">✨ Generate Analysis</button>
+        </div>
+        <div class="card-body">
+          <div class="empty-state" id="ai-empty"><p>Run a DSE or load results, then click Generate Analysis to get AI-powered trade-off insights and bottleneck detection.</p></div>
+          <div id="ai-content" class="hidden">
+            <div id="ai-markdown-render" style="line-height: 1.6; color: #1a1a2e; white-space: pre-wrap; font-family: Inter, sans-serif;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ ARCHITECTURE STUDIO ══════════ -->
+    <section class="page" id="page-arch-studio">
