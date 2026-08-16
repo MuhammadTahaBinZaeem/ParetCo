@@ -2,11 +2,7 @@
 
 /**
  * ParetoCo production bootstrap.
- *
- * - Enables useful Wine error diagnostics without noisy fixme/trace output.
- * - Captures native-engine stdout + stderr on non-zero exits.
- * - Keeps the bundled demo on the native search mode verified to work under Wine.
- * - Runs one real /api/launch smoke request after startup.
+ * Keeps the native engine untouched while hardening the web/AI bridge around it.
  */
 
 const fs = require('fs');
@@ -26,52 +22,74 @@ function tail(text, limit = DIAGNOSTIC_TAIL) {
   return value.length > limit ? value.slice(-limit) : value;
 }
 
-function isWineCommand(command) {
-  const base = path.basename(String(command || '')).toLowerCase();
-  return base === 'wine' || base === 'wine64';
+function replaceOnce(source, oldText, newText, label) {
+  if (source.includes(newText)) return { source, changed: false };
+  if (!source.includes(oldText)) {
+    console.warn(`[bridge-fix] ${label}: target not found; current source may already differ.`);
+    return { source, changed: false };
+  }
+  console.log(`[bridge-fix] ${label}: applied.`);
+  return { source: source.replace(oldText, newText), changed: true };
 }
 
-function isParetoCoInvocation(command, args) {
-  if (!isWineCommand(command)) return false;
-  return (args || []).some(arg => /paretoco-engine\.exe$/i.test(String(arg)));
+/**
+ * Patch only the JS bridge layer at boot. The native executable/DLLs are never
+ * modified. These compatibility repairs mirror capabilities already present in
+ * the bundled DeSyDe-derived engine (notably power/area/money constraints in
+ * desConst.xml).
+ */
+function applyBridgeCompatibilityFixes() {
+  const serverPath = path.join(ROOT_DIR, 'server.js');
+  if (!fs.existsSync(serverPath)) return;
+
+  let source = fs.readFileSync(serverPath, 'utf8');
+  let changed = false;
+  const apply = (oldText, newText, label) => {
+    const result = replaceOnce(source, oldText, newText, label);
+    source = result.source;
+    changed ||= result.changed;
+  };
+
+  apply(
+    "        const pModel = w.procModel || firstProcModel;",
+    "        const pModel = w.procModel || w.processor || firstProcModel;",
+    'honor imported WCET processor field'
+  );
+
+  apply(
+    "    const dseProp = jobData.dse?.th_prop ? jobData.dse.th_prop.toUpperCase() : 'SSE';",
+    "    const dseProp = String(jobData.dse?.th_prop || jobData.dse?.thProp || 'SSE').toUpperCase();",
+    'honor UI thProp selection'
+  );
+
+  const oldConstraintsBlock = `    // Write Design Constraints XML\n    let constraintsXml = jobData.constraintsXml;\n    if (!constraintsXml && jobData.constraints && jobData.constraints.length > 0) {\n      constraintsXml = \`<?xml version="1.0" encoding="UTF-8"?>\\n<designConstraints>\\n\`;\n      jobData.constraints.forEach(c => {\n        constraintsXml += \`  <constraint app_name="\${c.appName || 'App'}" period="\${c.period || 0}" latency="\${c.latency || 0}"></constraint>\\n\`;\n      });\n      constraintsXml += \`</designConstraints>\\n\`;\n    }\n    if (constraintsXml) {\n      fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);\n    }`;
+
+  const newConstraintsBlock = `    // Write canonical Design Constraints XML. System power/area/money bounds are\n    // already supported by the native engine on <constraint> attributes; the old\n    // browser bridge simply never forwarded them. Rebuild instead of trusting a\n    // stale client-generated constraintsXml payload.\n    const sysConstraints = jobData.sysConstraints || {};\n    const positiveInt = (value) => {\n      const number = Number(value);\n      return Number.isFinite(number) && number > 0 ? Math.round(number) : null;\n    };\n    const escapeXmlAttr = (value) => String(value ?? '')\n      .replace(/&/g, '&amp;')\n      .replace(/"/g, '&quot;')\n      .replace(/</g, '&lt;')\n      .replace(/>/g, '&gt;');\n\n    const nativeSystemAttrs = [];\n    const nativePower = positiveInt(sysConstraints.power ?? sysConstraints.maxPower);\n    const nativeArea = positiveInt(sysConstraints.area);\n    const nativeMoney = positiveInt(sysConstraints.cost ?? sysConstraints.money);\n    if (nativePower !== null) nativeSystemAttrs.push(\`power="\${nativePower}"\`);\n    if (nativeArea !== null) nativeSystemAttrs.push(\`area="\${nativeArea}"\`);\n    if (nativeMoney !== null) nativeSystemAttrs.push(\`money="\${nativeMoney}"\`);\n\n    // Native 'utilization' is a minimum and native 'procsUsed' is equality, while\n    // the current UI labels those fields as maxima. Do not invert user intent by\n    // silently passing them to the engine. They remain available for post-analysis.\n    const constraintRows = Array.isArray(jobData.constraints) ? jobData.constraints : [];\n    let constraintsXml = '';\n    if (constraintRows.length > 0 || nativeSystemAttrs.length > 0) {\n      constraintsXml = \`<?xml version="1.0" encoding="UTF-8"?>\\n<designConstraints>\\n\`;\n      if (constraintRows.length > 0) {\n        constraintRows.forEach(c => {\n          const attrs = [\n            \`app_name="\${escapeXmlAttr(c.appName || c.app_name || 'App')}"\`,\n            \`period="\${Math.max(0, parseInt(c.period, 10) || 0)}"\`,\n            \`latency="\${Math.max(0, parseInt(c.latency, 10) || 0)}"\`,\n            ...nativeSystemAttrs\n          ];\n          constraintsXml += \`  <constraint \${attrs.join(' ')}></constraint>\\n\`;\n        });\n      } else {\n        constraintsXml += \`  <constraint \${nativeSystemAttrs.join(' ')}></constraint>\\n\`;\n      }\n      constraintsXml += \`</designConstraints>\\n\`;\n      fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);\n    }`;
+
+  apply(oldConstraintsBlock, newConstraintsBlock, 'forward system constraints to native desConst.xml');
+
+  apply(
+    "          const powersFound = [...outTxt.matchAll(/sys power(?:\\s*\\(only used parts\\))?:\\s*(\\d+(?:\\.\\d+)?)/gi)].map(m => parseFloat(m[1]));",
+    "          const powersFound = [...outTxt.matchAll(/sys power(?:\\s*\\(only used parts\\))?:\\s*(?:\\{\\s*)?\\[?\\s*(-?\\d+(?:\\.\\d+)?)/gi)].map(m => parseFloat(m[1]));",
+    'recognize native interval power output such as [682..1002]'
+  );
+
+  apply(
+    'Goal: ${budgetPrompt}\\nCurrent Platform: ${JSON.stringify(platform)}\\nBaseline Results: ${resultsText}\\n\\nCall modify_architecture, then run_dse_engine, then inspect results.',
+    'Goal: ${budgetPrompt}\\nCurrent Platform: ${JSON.stringify(platform)}\\nBaseline Results: ${resultsText}\\n\\nPropose a complete modified platform JSON. It will be verified by a subsequent native DSE run.',
+    'remove nonexistent architecture-agent tool instruction'
+  );
+
+  if (changed) fs.writeFileSync(serverPath, source, 'utf8');
 }
 
-function formatNativeDiagnostic({ command, args, cwd, code, signal, stdout, stderr }) {
-  const commandLine = [command, ...(args || [])].map(value => String(value)).join(' ');
-  const lines = [
-    '[native-diagnostics]',
-    `command: ${commandLine}`,
-    `cwd: ${cwd || process.cwd()}`,
-    `platform: ${process.platform}/${process.arch}`,
-    `wineDebug: ${WINE_DEBUG}`,
-    `winePrefix: ${process.env.WINEPREFIX || path.join(os.tmpdir(), 'paretoco-wine')}`,
-    `exitCode: ${code}`,
-    `signal: ${signal || 'none'}`
-  ];
-
-  const cleanStdout = tail(stdout).trim();
-  const cleanStderr = tail(stderr).trim();
-
-  lines.push('--- native stdout (tail) ---');
-  lines.push(cleanStdout || '<empty>');
-  lines.push('--- wine/native stderr (tail) ---');
-  lines.push(cleanStderr || '<empty>');
-  lines.push('[/native-diagnostics]');
-
-  return lines.join('\n');
-}
-
-// The demo preset already intends to use FIRST, but generateConfigPreview() calls
-// syncStateFromForm(). If the visible dropdown still says OPTIMIZE_IT, it overwrites
-// the demo state and sends the unstable iterative BAB mode to the Windows engine.
-// Keep the repository UI logic intact and make the deployed demo synchronize its
-// form before config generation. This affects only the demo preset; users can still
-// manually select the other search modes afterwards.
 function applyDemoPresetCompatibilityFix() {
   const appPath = path.join(ROOT_DIR, 'ui', 'app.js');
   if (!fs.existsSync(appPath)) return;
 
   let source = fs.readFileSync(appPath, 'utf8');
+  let changed = false;
+
   const original = [
     '    state.dse.criteria = "THROUGHPUT";',
     '    state.dse.search = "FIRST";',
@@ -87,187 +105,153 @@ function applyDemoPresetCompatibilityFix() {
     '',
     '    renderPlatform();'
   ].join('\n');
-
-  if (source.includes(fixed)) {
-    console.log('[demo-fix] Demo preset already synchronized with DSE form.');
-    return;
+  if (source.includes(original)) {
+    source = source.replace(original, fixed);
+    changed = true;
+    console.log('[demo-fix] Demo preset synchronized with FIRST + THROUGHPUT + SSE.');
   }
 
-  if (!source.includes(original)) {
-    console.warn('[demo-fix] Demo preset block not found; no runtime patch applied.');
-    return;
+  if (source.includes('Object.assign(state.config, data.model.dse);')) {
+    source = source.replace('Object.assign(state.config, data.model.dse);', 'Object.assign(state.dse, data.model.dse);');
+    changed = true;
+    console.log('[ai-fix] NL-to-DSE now writes into state.dse.');
   }
 
-  source = source.replace(original, fixed);
-  fs.writeFileSync(appPath, source, 'utf8');
-  console.log('[demo-fix] Demo preset forced to FIRST + THROUGHPUT + SSE and synchronized with the visible form.');
+  if (changed) fs.writeFileSync(appPath, source, 'utf8');
 }
 
+applyBridgeCompatibilityFixes();
 applyDemoPresetCompatibilityFix();
 
-// Patch spawn before server.js imports { spawn }. This keeps the native bridge
-// implementation intact while making failures observable in Render and in the UI.
+function isWineCommand(command) {
+  const base = path.basename(String(command || '')).toLowerCase();
+  return base === 'wine' || base === 'wine64';
+}
+
+function isParetoCoInvocation(command, args) {
+  if (!isWineCommand(command)) return false;
+  return (args || []).some(arg => /paretoco-engine\.exe$/i.test(String(arg)));
+}
+
+function formatNativeDiagnostic({ command, args, cwd, code, signal, stdout, stderr }) {
+  const commandLine = [command, ...(args || [])].map(String).join(' ');
+  return [
+    '[native-diagnostics]',
+    `command: ${commandLine}`,
+    `cwd: ${cwd || process.cwd()}`,
+    `platform: ${process.platform}/${process.arch}`,
+    `wineDebug: ${WINE_DEBUG}`,
+    `winePrefix: ${process.env.WINEPREFIX || path.join(os.tmpdir(), 'paretoco-wine')}`,
+    `exitCode: ${code}`,
+    `signal: ${signal || 'none'}`,
+    '--- native stdout (tail) ---',
+    tail(stdout).trim() || '<empty>',
+    '--- wine/native stderr (tail) ---',
+    tail(stderr).trim() || '<empty>',
+    '[/native-diagnostics]'
+  ].join('\n');
+}
+
 const originalSpawn = childProcess.spawn;
 childProcess.spawn = function patchedSpawn(command, args = [], options = {}) {
   let launchOptions = options;
-
   if (isWineCommand(command)) {
     launchOptions = {
       ...options,
-      env: {
-        ...(options.env || process.env),
-        WINEDEBUG: WINE_DEBUG
-      }
+      env: { ...(options.env || process.env), WINEDEBUG: WINE_DEBUG }
     };
   }
 
   const child = originalSpawn.call(childProcess, command, args, launchOptions);
-
   if (!isParetoCoInvocation(command, args)) return child;
 
   let stdout = '';
   let stderr = '';
-
-  child.stdout?.on('data', chunk => {
-    stdout += chunk.toString();
-    if (stdout.length > DIAGNOSTIC_TAIL * 2) stdout = tail(stdout);
-  });
-
-  child.stderr?.on('data', chunk => {
-    stderr += chunk.toString();
-    if (stderr.length > DIAGNOSTIC_TAIL * 2) stderr = tail(stderr);
-  });
+  child.stdout?.on('data', chunk => { stdout = tail(stdout + chunk.toString(), DIAGNOSTIC_TAIL * 2); });
+  child.stderr?.on('data', chunk => { stderr = tail(stderr + chunk.toString(), DIAGNOSTIC_TAIL * 2); });
 
   child.on('close', (code, signal) => {
     if (code === 0) return;
-
-    const diagnostic = formatNativeDiagnostic({
-      command,
-      args,
-      cwd: launchOptions.cwd,
-      code,
-      signal,
-      stdout,
-      stderr
-    });
-
+    const diagnostic = formatNativeDiagnostic({ command, args, cwd: launchOptions.cwd, code, signal, stdout, stderr });
     console.error(diagnostic);
-
-    // server.js already accumulates child.stderr and returns it in the API error.
-    // Emit the diagnostic before its close handler runs so the existing frontend
-    // can display Wine errors, native stdout, and the exit context immediately.
-    if (child.stderr && typeof child.stderr.emit === 'function') {
-      child.stderr.emit('data', Buffer.from(`\n${diagnostic}\n`));
-    }
+    child.stderr?.emit?.('data', Buffer.from(`\n${diagnostic}\n`));
   });
-
   return child;
 };
 
-function runApiSmokeTest() {
-  const payload = JSON.stringify({
-    platform: {
-      processors: [
-        {
-          model: 'ARM',
-          count: 2,
-          modes: [
-            {
-              name: 'default',
-              cycle: 1,
-              mem: 4096,
-              dynPower: 10,
-              staticPower: 2,
-              area: 5,
-              monetary: 10
-            }
-          ]
-        }
-      ]
-    },
-    applications: [
-      {
-        name: 'SmokeApp',
-        actors: ['src_node', 'proc_node', 'snk_node'],
-        channels: [
-          { name: 'ch1', src: 'src_node', dst: 'proc_node', tokens: 0 },
-          { name: 'ch2', src: 'proc_node', dst: 'snk_node', tokens: 0 },
-          { name: 'ch3', src: 'snk_node', dst: 'src_node', tokens: 1 }
-        ]
-      }
-    ],
-    wcets: [
-      { taskType: 'src_node', procModel: 'ARM', mode: 'default', wcet: 10 },
-      { taskType: 'proc_node', procModel: 'ARM', mode: 'default', wcet: 25 },
-      { taskType: 'snk_node', procModel: 'ARM', mode: 'default', wcet: 15 }
-    ],
-    constraints: [
-      { appName: 'SmokeApp', period: 1000, latency: 0 }
-    ],
-    dse: {
-      model: 'SDF_PR_ONLINE',
-      criteria: 'THROUGHPUT',
-      search: 'FIRST',
-      th_prop: 'SSE'
-    }
-  });
-
+function requestLaunch(payload, label, verify) {
+  const body = JSON.stringify(payload);
   const request = http.request({
     hostname: '127.0.0.1',
     port: Number(PORT),
     path: '/api/launch',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload)
-    },
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     timeout: 30_000
   }, response => {
-    let body = '';
-    response.on('data', chunk => { body += chunk.toString(); });
+    let responseBody = '';
+    response.on('data', chunk => { responseBody += chunk.toString(); });
     response.on('end', () => {
       let parsed = {};
-      try { parsed = JSON.parse(body); } catch (_) {}
-
-      if (response.statusCode >= 200 && response.statusCode < 300 && parsed.success !== false) {
-        const output = String(parsed.outTxt || parsed.log || '');
-        const matches = [...output.matchAll(/(\d+)\s+solutions?/gi)];
-        const solutions = matches.length ? Number(matches[matches.length - 1][1]) : 'unknown';
-        console.log(`[api-smoke] PASS: /api/launch HTTP ${response.statusCode}, solutions=${solutions}`);
-        return;
-      }
-
-      console.error(`[api-smoke] FAIL: /api/launch HTTP ${response.statusCode}`);
-      if (parsed.error) console.error(`[api-smoke] error: ${parsed.error}`);
-      if (parsed.stdout) console.error(`[api-smoke] stdout:\n${tail(parsed.stdout)}`);
-      if (parsed.stderr) console.error(`[api-smoke] stderr:\n${tail(parsed.stderr)}`);
-      if (!parsed.error && !parsed.stdout && !parsed.stderr) {
-        console.error(`[api-smoke] body:\n${tail(body)}`);
+      try { parsed = JSON.parse(responseBody); } catch (_) {}
+      const ok = response.statusCode >= 200 && response.statusCode < 300 && parsed.success !== false && verify(parsed);
+      if (ok) console.log(`[${label}] PASS`);
+      else {
+        console.error(`[${label}] FAIL: HTTP ${response.statusCode}`);
+        if (parsed.error) console.error(`[${label}] error: ${parsed.error}`);
+        if (parsed.outTxt) console.error(`[${label}] outTxt:\n${tail(parsed.outTxt, 4000)}`);
+        if (parsed.stderr) console.error(`[${label}] stderr:\n${tail(parsed.stderr, 4000)}`);
       }
     });
   });
-
-  request.on('timeout', () => {
-    console.error('[api-smoke] FAIL: /api/launch timed out after 30s');
-    request.destroy();
-  });
-
-  request.on('error', err => {
-    console.error(`[api-smoke] FAIL: ${err.message}`);
-  });
-
-  request.write(payload);
+  request.on('timeout', () => { console.error(`[${label}] FAIL: timed out`); request.destroy(); });
+  request.on('error', err => console.error(`[${label}] FAIL: ${err.message}`));
+  request.write(body);
   request.end();
 }
 
-const server = require('./server');
+function baseSmokePayload() {
+  return {
+    platform: {
+      processors: [{ model: 'ARM', count: 2, modes: [{ name: 'default', cycle: 1, mem: 4096, dynPower: 10, staticPower: 2, area: 5, monetary: 10 }] }],
+      interconnects: [{ name: 'bus0', topology: 'TDMA-bus', xDim: 2, yDim: 1, flitSize: 32, slots: 2 }]
+    },
+    applications: [{
+      name: 'SmokeApp', actors: ['src_node', 'proc_node', 'snk_node'],
+      channels: [
+        { name: 'ch1', src: 'src_node', dst: 'proc_node', tokens: 0 },
+        { name: 'ch2', src: 'proc_node', dst: 'snk_node', tokens: 0 },
+        { name: 'ch3', src: 'snk_node', dst: 'src_node', tokens: 1 }
+      ]
+    }],
+    wcets: [
+      { taskType: 'src_node', processor: 'ARM', mode: 'default', wcet: 10 },
+      { taskType: 'proc_node', processor: 'ARM', mode: 'default', wcet: 25 },
+      { taskType: 'snk_node', processor: 'ARM', mode: 'default', wcet: 15 }
+    ],
+    constraints: [{ appName: 'SmokeApp', period: 1000, latency: 0 }],
+    dse: { model: 'SDF_PR_ONLINE', criteria: 'THROUGHPUT', search: 'FIRST', thProp: 'SSE' }
+  };
+}
 
+function runSmokeTests() {
+  const normal = baseSmokePayload();
+  requestLaunch(normal, 'api-smoke', parsed => /\b[1-9]\d*\s+solutions?\s+found/i.test(String(parsed.outTxt || parsed.log || '')));
+
+  const constrained = baseSmokePayload();
+  constrained.sysConstraints = { power: 1, utilization: -1, area: -1, cost: -1, procsUsed: -1 };
+  setTimeout(() => {
+    requestLaunch(constrained, 'constraint-smoke', parsed => /0\s+solutions?\s+found/i.test(String(parsed.outTxt || '')));
+  }, 800).unref?.();
+}
+
+const server = require('./server');
 server.listen(PORT, HOST, () => {
   console.log('====================================================');
   console.log('  ParetoCo Web Dashboard & Engine Server');
   console.log(`  Running on http://${HOST}:${PORT}`);
   console.log(`  Wine diagnostics: ${WINE_DEBUG}`);
+  console.log('  Bridge reliability fixes: enabled (native engine unchanged)');
   console.log('====================================================');
-
-  setTimeout(runApiSmokeTest, 500).unref?.();
+  setTimeout(runSmokeTests, 500).unref?.();
 });
