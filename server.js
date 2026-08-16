@@ -713,3 +713,74 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/ai/insights' && req.method === 'POST') {
     let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body);
+        const { askFeatherless } = require('./ai_features/featherless');
+        const systemPrompt = `You are a Principal Embedded Systems Architect and Design Space Exploration (DSE) Analyst. Analyze the currently active DSE configuration, hardware platform, application workload, and optimization results. Provide an executive summary of Pareto trade-offs, identify system bottlenecks, and recommend optimal deployment configurations. Format your output cleanly in Markdown with headings and bullet points.`;
+        
+        let userPrompt = `### Current DSE Context:\n`;
+        userPrompt += `- **Application**: ${data.appName || 'Streaming Application'}\n`;
+        userPrompt += `- **Hardware Platform**: ${data.platformSummary || 'Multi-core SoC'}\n`;
+        userPrompt += `- **Active Constraints**: ${data.constraintsSummary || 'None'}\n`;
+        userPrompt += `- **Current Solutions Evaluated**: ${data.solutionsCount || 'N/A'}\n\n`;
+        userPrompt += `### Current Solutions Details:\n${data.solutionsSummary || data.outTxt || data.outCsv || 'No output provided'}\n\nPlease generate the comprehensive design space trade-off analysis.`;
+
+        const responseText = await askFeatherless(systemPrompt, userPrompt);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ insights: responseText }));
+      } catch (err) {
+        // Return 200 with error flag so client can seamlessly use local analytical synthesis
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message, fallback: true }));
+      }
+    });
+    return;
+  }
+
+  if (pathname === '/api/ai/nl-to-dse' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { prompt, messages } = JSON.parse(body);
+        const { convertNlToDseAgent } = require('./ai_features/nl_to_model');
+        
+        let chatMessages = messages || [
+           { role: "system", content: "You are an AI DSE assistant parsing Natural Language to a DSE JSON." },
+           { role: "user", content: prompt }
+        ];
+
+        const logs = [];
+        const result = await convertNlToDseAgent(chatMessages, (log) => logs.push(log));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...result, logs, messages: chatMessages }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (pathname === '/api/ai/auto-optimize' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { budgetPrompt, platform, resultsText, messages } = JSON.parse(body);
+        const { autoOptimizeAgent } = require('./ai_features/auto_optimize');
+        
+        let chatMessages = messages || [
+           { role: "system", content: "You are an Autonomous Architecture Optimization Agent." },
+           { role: "user", content: `Goal: ${budgetPrompt}\nCurrent Platform: ${JSON.stringify(platform)}\nBaseline Results: ${resultsText}\n\nCall modify_architecture, then run_dse_engine, then inspect results.` }
+        ];
+
+        const logs = [];
+        const result = await autoOptimizeAgent(chatMessages, (log) => logs.push(log));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...result, logs, messages: chatMessages }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
