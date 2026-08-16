@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<platform name="Video_MPSoC">
+  <processor model="ARM_Big" number="2">
+    <mode name="default" cycle="1" mem="32768" dynPower="35" staticPower="5" area="12" monetary="25"/>
+  </processor>
+  <processor model="ARM_LITTLE" number="2">
+    <mode name="default" cycle="1" mem="16384" dynPower="12" staticPower="2" area="6" monetary="10"/>
+  </processor>
+  <TDN_NoC name="noc0" topology="2D-mesh" x-dimension="2" y-dimension="2" flitSize="64" cycles="1"/>
+</platform>
