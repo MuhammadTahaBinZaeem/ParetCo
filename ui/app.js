@@ -446,3 +446,152 @@
     } else {
       empty.classList.add("hidden");
       tbody.closest("table").classList.remove("hidden");
+      state.platform.processors.forEach((p, idx) => {
+        p.modes.forEach((m, mi) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${mi === 0 ? `<input type="text" class="table-input" value="${p.model}" onchange="paretoco.updateProcessorModel(${idx}, this.value)" title="Edit Processor Model Name">` : `<span style="color:var(--text-muted); font-size:0.75rem;">↳ mode ${mi + 1}</span>`}</td>
+            <td>${mi === 0 ? `<input type="number" class="table-input table-input-sm" min="1" value="${p.count}" onchange="paretoco.updateProcessorCount(${idx}, this.value)" title="Edit Core Count">` : ""}</td>
+            <td><input type="text" class="table-input table-input-sm" value="${m.name}" onchange="paretoco.updateModeName(${idx}, ${mi}, this.value)" title="Edit Mode Name"></td>
+            <td><input type="number" class="table-input" value="${m.mem}" onchange="paretoco.updateModeMem(${idx}, ${mi}, this.value)" title="Edit Memory in Bytes"></td>
+            <td><input type="number" class="table-input table-input-sm" value="${m.dynPower}" onchange="paretoco.updateModeDynPower(${idx}, ${mi}, this.value)" title="Edit Dynamic Power (mW)"></td>
+            <td><input type="number" class="table-input table-input-sm" value="${m.staticPower}" onchange="paretoco.updateModeStaticPower(${idx}, ${mi}, this.value)" title="Edit Static Leakage Power (mW)"></td>
+            <td><input type="number" class="table-input table-input-sm" value="${m.area}" onchange="paretoco.updateModeArea(${idx}, ${mi}, this.value)" title="Edit Silicon Area (mm²)"></td>
+            <td><input type="number" class="table-input table-input-sm" value="${m.monetary}" onchange="paretoco.updateModeCost(${idx}, ${mi}, this.value)" title="Edit Monetary Cost ($)"></td>
+            <td style="white-space: nowrap;">
+              ${mi === 0 ? `<button class="btn btn-xs btn-outline" style="margin-right:4px;" onclick="paretoco.addProcessorMode(${idx})" title="Add Operating Mode">+ Mode</button><button class="btn btn-danger btn-xs" onclick="paretoco.removeProcessor(${idx})" title="Delete Processor">✕</button>` : `<button class="btn btn-danger btn-xs" onclick="paretoco.removeProcessorMode(${idx}, ${mi})" title="Delete Mode">✕</button>`}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      });
+    }
+
+    renderInterconnects();
+    renderPlatformSummary();
+  }
+
+  function renderInterconnects() {
+    const list = $("#interconnect-list");
+    const empty = $("#interconnect-empty");
+    if (!list) return;
+    list.innerHTML = "";
+
+    if (!state.platform.interconnects || state.platform.interconnects.length === 0) {
+      if (empty) empty.classList.remove("hidden");
+    } else {
+      if (empty) empty.classList.add("hidden");
+      state.platform.interconnects.forEach((ic, idx) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.style.marginBottom = "12px";
+        card.style.padding = "14px";
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <strong style="color:var(--text-primary);">Interconnect:</strong>
+              <input type="text" class="table-input" style="width:140px;" value="${ic.name}" onchange="paretoco.updateInterconnectName(${idx}, this.value)" title="Edit Interconnect Name">
+            </div>
+            <button class="btn btn-danger btn-xs" onclick="paretoco.removeInterconnect(${idx})">✕ Remove</button>
+          </div>
+          <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">
+            <div class="form-group">
+              <label>Topology</label>
+              <select class="table-input" onchange="paretoco.updateInterconnectTopology(${idx}, this.value)">
+                <option value="TDMA-bus" ${ic.topology === "TDMA-bus" ? "selected" : ""}>TDMA-bus</option>
+                <option value="2D-mesh" ${ic.topology === "2D-mesh" ? "selected" : ""}>2D-mesh</option>
+                <option value="Ring" ${ic.topology === "Ring" ? "selected" : ""}>Ring</option>
+                <option value="Crossbar" ${ic.topology === "Crossbar" ? "selected" : ""}>Crossbar</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>X-Dim</label>
+              <input type="number" class="table-input" min="1" value="${ic.xDim || 1}" onchange="paretoco.updateInterconnectXDim(${idx}, this.value)">
+            </div>
+            <div class="form-group">
+              <label>Y-Dim</label>
+              <input type="number" class="table-input" min="1" value="${ic.yDim || 1}" onchange="paretoco.updateInterconnectYDim(${idx}, this.value)">
+            </div>
+            <div class="form-group">
+              <label>Flit Size (B)</label>
+              <input type="number" class="table-input" value="${ic.flitSize || 32}" onchange="paretoco.updateInterconnectFlit(${idx}, this.value)">
+            </div>
+            <div class="form-group">
+              <label>Slots</label>
+              <input type="number" class="table-input" value="${ic.slots || 2}" onchange="paretoco.updateInterconnectSlots(${idx}, this.value)">
+            </div>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+    }
+  }
+
+  function renderPlatformSummary() {
+    const el = $("#platform-summary");
+    if (!el) return;
+    if (state.platform.processors.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="img-container" style="display: flex; flex: 1; max-width: 64px; margin: 0 auto; margin-bottom: 12px;"><img src="/assets/flat-platform.png" alt="Platform" style="max-width: 100%; height: auto; object-fit: contain; border: 3px solid #000; box-shadow: 3px 3px 0px #000;"></div><p>Import a <code>platform.xml</code> to see details.</p></div>`;
+      return;
+    }
+    let html = '<div class="platform-chips">';
+    state.platform.processors.forEach(p => {
+      html += `<div class="chip"><strong>${p.model}</strong> × ${p.count}<br><span class="chip-sub">${p.modes.length} mode(s)</span></div>`;
+    });
+    if (state.platform.interconnects && state.platform.interconnects.length) {
+      state.platform.interconnects.forEach(ic => {
+        html += `<div class="chip ic"><strong>${ic.name}</strong><br><span class="chip-sub">${ic.topology} ${ic.xDim}×${ic.yDim}</span></div>`;
+      });
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // ── Applications ────────────────────────────────────────────
+  function renderApplications() {
+    const list = $("#applications-list");
+    const empty = $("#applications-empty");
+    if (!list) return;
+    list.innerHTML = "";
+
+    if (state.applications.length === 0) {
+      if (empty) empty.classList.remove("hidden");
+    } else {
+      if (empty) empty.classList.add("hidden");
+      state.applications.forEach((app, idx) => {
+        const div = document.createElement("div");
+        div.className = "app-card";
+        div.innerHTML = `
+          <div class="app-card-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <img src="img/icon-applications.jpg" style="width:22px; height:22px; border-radius:4px; object-fit:cover;">
+              <h3>${app.name}</h3>
+            </div>
+            <div>
+              <span class="badge blue">${app.actors.length} actors</span>
+              <span class="badge violet">${app.channels.length} channels</span>
+              <button class="btn btn-danger btn-xs" onclick="paretoco.removeApp(${idx})">✕</button>
+            </div>
+          </div>
+          <div class="app-card-actors">${app.actors.map(a => `<span class="actor-chip"><img src="img/icon-actors.jpg" style="width:12px; height:12px; border-radius:2px; vertical-align:middle; margin-right:4px;">${a.name}</span>`).join("")}</div>
+        `;
+        list.appendChild(div);
+      });
+    }
+  }
+
+  // ── WCETs ───────────────────────────────────────────────────
+  function renderWcets() {
+    const tbody = $("#wcet-tbody");
+    const empty = $("#wcet-empty");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    if (state.wcets.length === 0) {
+      if (empty) empty.classList.remove("hidden");
+      tbody.closest("table")?.classList.add("hidden");
+    } else {
+      if (empty) empty.classList.add("hidden");
+      tbody.closest("table")?.classList.remove("hidden");
+      state.wcets.forEach((w, idx) => {
+        const tr = document.createElement("tr");
