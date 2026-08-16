@@ -19,7 +19,7 @@ COPY ai_features/package.json ai_features/package-lock.json ./ai_features/
 RUN npm ci --omit=dev --prefix ./ai_features
 
 COPY package.json package-lock.json ./
-COPY server.js start.js preflight.js app_preflight.js round2_preflight.js ./
+COPY server.js start.js preflight.js app_preflight.js round2_preflight.js round3_preflight.js ./
 COPY ui/ ./ui/
 COPY ai_features/ ./ai_features/
 COPY paretoco-engine-release/ ./paretoco-engine-release/
@@ -43,6 +43,6 @@ ENV NODE_ENV=production \
 
 EXPOSE 10000
 
-# Initialize a writable 64-bit Wine prefix, run both app-layer repair passes,
+# Initialize a writable 64-bit Wine prefix, run all app-layer reliability passes,
 # then start production diagnostics. Native engine files are untouched.
-CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node round2_preflight.js"]
+CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node round3_preflight.js"]
