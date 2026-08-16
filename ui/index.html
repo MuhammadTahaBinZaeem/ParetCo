@@ -314,3 +314,56 @@
               <textarea id="ai-auto-opt-input" class="text-input" rows="4" placeholder="e.g. Find an architecture achieving >= 30 FPS, < 15 W and < $80 BOM. Optimize energy first and cost second."></textarea>
               <button class="btn btn-primary" id="btn-ai-auto-opt" style="margin-top: 12px;">⚡ Auto-Optimize Architecture</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-header"><h2>Search Configuration</h2></div>
+          <div class="card-body">
+            <div class="form-grid form-single">
+              <div class="form-group"><label>CP Model</label><select id="dse-model" class="text-input"><option value="NONECP">None</option><option value="SDF">SDF</option><option value="SDF_PR_ONLINE" selected>SDF_PR_ONLINE</option></select></div>
+              <div class="form-group"><label>Search Type</label><select id="dse-search" class="text-input"><option value="NONESEARCH">None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT" selected>OPTIMIZE_IT</option></select></div>
+              <div class="form-group"><label>Optimization Criteria</label><select id="dse-criteria" class="text-input"><option value="NONE">None</option><option value="POWER" selected>POWER</option><option value="THROUGHPUT">THROUGHPUT</option><option value="LATENCY">LATENCY</option></select></div>
+              <div class="form-group"><label>Threads (0 = all)</label><input type="number" id="dse-threads" value="0" class="text-input"></div>
+              <div class="form-group"><label>Timeout — first (s)</label><input type="number" id="dse-timeout1" value="0" class="text-input"></div>
+              <div class="form-group"><label>Timeout — incremental (s)</label><input type="number" id="dse-timeout2" value="0" class="text-input"></div>
+              <div class="form-group"><label>Luby Scale</label><input type="number" id="dse-luby" value="0" class="text-input"></div>
+              <div class="form-group"><label>No-good Depth</label><input type="number" id="dse-nogood" value="75" class="text-input"></div>
+              <div class="form-group"><label>Throughput Propagator</label><select id="dse-thprop" class="text-input"><option value="SSE" selected>SSE</option><option value="MCR">MCR</option></select></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Presolver</h2></div>
+          <div class="card-body">
+            <div class="form-grid form-single">
+              <div class="form-group"><label>Pre-solve Model</label><select id="pre-model" class="text-input"><option value="NONE" selected>None</option><option value="ONE_PROC_MAPPINGS">ONE_PROC_MAPPINGS</option></select></div>
+              <div class="form-group"><label>Pre-solve Search</label><select id="pre-search" class="text-input"><option value="NONESEARCH" selected>None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT">OPTIMIZE_IT</option></select></div>
+              <div class="form-group"><label>Heuristic</label><select id="pre-heuristic" class="text-input"><option value="NONE" selected>None</option><option value="TODAES">TODAES</option></select></div>
+              <div class="form-group"><label>Multi-step Search</label><select id="pre-multisearch" class="text-input"><option value="NONESEARCH" selected>None</option><option value="FIRST">FIRST</option><option value="ALL">ALL</option><option value="OPTIMIZE">OPTIMIZE</option><option value="OPTIMIZE_IT">OPTIMIZE_IT</option></select></div>
+              <div class="form-group"><label>Timeout — first (s)</label><input type="number" id="pre-timeout1" value="0" class="text-input"></div>
+              <div class="form-group"><label>Timeout — incremental (s)</label><input type="number" id="pre-timeout2" value="0" class="text-input"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Output Settings</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group"><label>Output File Type</label><select id="out-type" class="text-input"><option value="ALL_OUT" selected>ALL</option><option value="CSV">CSV</option><option value="TXT">TXT</option><option value="XML">XML</option></select></div>
+            <div class="form-group"><label>Print Frequency</label><select id="out-freq" class="text-input"><option value="ALL">ALL</option><option value="LAST" selected>LAST</option><option value="FIRSTandLAST">FIRST and LAST</option></select></div>
+            <div class="form-group"><label>Print Metric</label><select id="out-metric" class="text-input"><option value="NONE" selected>None</option><option value="POWER">POWER</option><option value="THROUGHPUT">THROUGHPUT</option><option value="LATENCY">LATENCY</option></select></div>
+            <div class="form-group"><label>Log Level</label><select id="out-log-level" class="text-input"><option value="CRITICAL">CRITICAL</option><option value="ERROR">ERROR</option><option value="WARNING">WARNING</option><option value="INFO" selected>INFO</option><option value="DEBUG">DEBUG</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Generated config.cfg</h2>
+          <div class="card-actions">
+            <button class="btn btn-sm btn-outline" id="btn-copy-config">Copy</button>
+            <button class="btn btn-sm btn-primary" id="btn-download-config">Download</button>
+          </div>
