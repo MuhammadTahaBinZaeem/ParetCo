@@ -6,6 +6,79 @@ const fs = require('fs');
 const path = require('path');
 
 const appPath = path.join(__dirname, 'ui', 'app.js');
+const serverPath = path.join(__dirname, 'server.js');
+
+function patchServerConstraintSemantics() {
+  if (!fs.existsSync(serverPath)) return;
+  let source = fs.readFileSync(serverPath, 'utf8');
+  const oldBlock = `    // Write Design Constraints XML
+    let constraintsXml = jobData.constraintsXml;
+    if (!constraintsXml && jobData.constraints && jobData.constraints.length > 0) {
+      constraintsXml = \`<?xml version="1.0" encoding="UTF-8"?>\\n<designConstraints>\\n\`;
+      jobData.constraints.forEach(c => {
+        constraintsXml += \`  <constraint app_name="\${c.appName || 'App'}" period="\${c.period || 0}" latency="\${c.latency || 0}"></constraint>\\n\`;
+      });
+      constraintsXml += \`</designConstraints>\\n\`;
+    }
+    if (constraintsXml) {
+      fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);
+    }`;
+
+  const newBlock = `    // Canonical native design constraints. Semantics match the packaged engine:
+    // power/area/money are maxima, utilization is a minimum percentage, and
+    // procsUsed is the exact active-processor count.
+    const sysConstraints = jobData.sysConstraints || {};
+    const positiveInt = (value) => {
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 ? Math.round(number) : null;
+    };
+    const escapeXmlAttr = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const nativeSystemAttrs = [];
+    const nativePower = positiveInt(sysConstraints.power ?? sysConstraints.maxPower);
+    const nativeArea = positiveInt(sysConstraints.area);
+    const nativeMoney = positiveInt(sysConstraints.cost ?? sysConstraints.money);
+    const nativeUtilization = positiveInt(sysConstraints.utilization ?? sysConstraints.minUtilization);
+    const nativeProcsUsed = positiveInt(sysConstraints.procsUsed);
+    if (nativePower !== null) nativeSystemAttrs.push(\`power="\${nativePower}"\`);
+    if (nativeArea !== null) nativeSystemAttrs.push(\`area="\${nativeArea}"\`);
+    if (nativeMoney !== null) nativeSystemAttrs.push(\`money="\${nativeMoney}"\`);
+    if (nativeUtilization !== null) nativeSystemAttrs.push(\`utilization="\${nativeUtilization}"\`);
+    if (nativeProcsUsed !== null) nativeSystemAttrs.push(\`procsUsed="\${nativeProcsUsed}"\`);
+
+    const constraintRows = Array.isArray(jobData.constraints) ? jobData.constraints : [];
+    let constraintsXml = '';
+    if (constraintRows.length > 0 || nativeSystemAttrs.length > 0) {
+      constraintsXml = \`<?xml version="1.0" encoding="UTF-8"?>\\n<designConstraints>\\n\`;
+      if (constraintRows.length > 0) {
+        constraintRows.forEach(c => {
+          const attrs = [
+            \`app_name="\${escapeXmlAttr(c.appName || c.app_name || 'App')}"\`,
+            \`period="\${Math.max(0, parseInt(c.period, 10) || 0)}"\`,
+            \`latency="\${Math.max(0, parseInt(c.latency, 10) || 0)}"\`,
+            ...nativeSystemAttrs
+          ];
+          constraintsXml += \`  <constraint \${attrs.join(' ')}></constraint>\\n\`;
+        });
+      } else {
+        constraintsXml += \`  <constraint \${nativeSystemAttrs.join(' ')}></constraint>\\n\`;
+      }
+      constraintsXml += \`</designConstraints>\\n\`;
+      fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);
+    }`;
+
+  if (source.includes(newBlock)) return;
+  if (!source.includes(oldBlock)) {
+    console.warn('[server-preflight] design-constraint bridge target not found.');
+    return;
+  }
+  source = source.replace(oldBlock, newBlock);
+  fs.writeFileSync(serverPath, source, 'utf8');
+  console.log('[server-preflight] native system-constraint semantics enabled.');
+}
 
 function patchUiSource() {
   if (!fs.existsSync(appPath)) return;
@@ -100,6 +173,8 @@ function patchUiSource() {
     if (Number(state.sysConstraints?.power) > 0) systemAttrs.push(\`power="\${Math.round(Number(state.sysConstraints.power))}"\`);
     if (Number(state.sysConstraints?.area) > 0) systemAttrs.push(\`area="\${Math.round(Number(state.sysConstraints.area))}"\`);
     if (Number(state.sysConstraints?.cost) > 0) systemAttrs.push(\`money="\${Math.round(Number(state.sysConstraints.cost))}"\`);
+    if (Number(state.sysConstraints?.utilization) > 0) systemAttrs.push(\`utilization="\${Math.round(Number(state.sysConstraints.utilization))}"\`);
+    if (Number(state.sysConstraints?.procsUsed) > 0) systemAttrs.push(\`procsUsed="\${Math.round(Number(state.sysConstraints.procsUsed))}"\`);
     state.constraints.forEach(c => {
       xml += \`  <constraint app_name="\${c.appName}" period="\${c.period}" latency="\${c.latency}"\${systemAttrs.length ? ' ' + systemAttrs.join(' ') : ''}></constraint>\\n\`;
     });
@@ -107,7 +182,7 @@ function patchUiSource() {
     xml += '</designConstraints>\\n';
     return xml;
   }`;
-  replaceOnce(oldGenerateConstraints, newGenerateConstraints, 'exported desConst.xml includes system power/area/cost bounds');
+  replaceOnce(oldGenerateConstraints, newGenerateConstraints, 'exported desConst.xml includes all native system constraints');
 
   const oldPlatformClose = "    xml += '</platform>\\n';";
   const newPlatformClose = `    if (state.platform.interconnects && state.platform.interconnects.length) {
@@ -124,5 +199,6 @@ function patchUiSource() {
   if (changed) fs.writeFileSync(appPath, source, 'utf8');
 }
 
+patchServerConstraintSemantics();
 patchUiSource();
 require('./start');
