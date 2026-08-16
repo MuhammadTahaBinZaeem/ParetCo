@@ -426,3 +426,65 @@ Only the 30 fixture directories required by this suite are retained; the unused 
 
 | Endpoint | Method | Purpose |
 |---|---:|---|
+| `/healthz` | GET | Deployment health + native-engine availability |
+| `/api/health` | GET | Same health information for API clients |
+| `/api/status` | GET | Runtime, architecture, engine path/mode |
+| `/api/presets` | GET | Built-in DSE demo presets |
+| `/api/launch` | POST | Generate inputs and execute the native DSE engine |
+| `/api/ai/insights` | POST | Featherless DSE/result interpretation |
+| `/api/ai/nl-to-dse` | POST | Natural-language request to structured DSE model |
+| `/api/ai/auto-optimize` | POST | AI-guided architecture optimization workflow |
+| `/api/ai/unsat-doctor` | POST | AI-guided infeasibility repair workflow |
+
+---
+
+# Benchmarks
+
+The cleaned repository retains three representative computational workloads:
+
+- H.264 video pipeline
+- Sobel filter
+- Susan edge/corner detector
+
+Each benchmark retains the configuration and XML/SDF files used by its model; redundant duplicate `platform.xml` copies were removed.
+
+---
+
+# Technical Foundations
+
+ParetoCo's implementation draws on established algorithms and methods including:
+
+- constraint programming with Gecode
+- Synchronous Dataflow modeling
+- Maximum Cycle Ratio / maximum-cycle-mean analysis
+- self-timed dataflow execution
+- Pareto dominance and non-dominated sorting
+- SPEA2 multi-objective optimization metrics
+- QuickXplain-style conflict isolation
+- fixed-priority response-time analysis
+- Dijkstra, Floyd-Warshall, Tarjan SCC, Dinic max-flow, and critical-path analysis
+- mesh NoC XY routing and wormhole-contention modeling
+- DVFS/energy modeling
+- thermal RC modeling and RK4 transient integration
+- cache hierarchy and MESI-style coherence modeling
+
+### Selected references
+
+- E. A. Lee and D. G. Messerschmitt, “Synchronous Data Flow,” *Proceedings of the IEEE*, 1987.
+- K. Deb et al., “A Fast and Elitist Multiobjective Genetic Algorithm: NSGA-II,” *IEEE Transactions on Evolutionary Computation*, 2002.
+- E. Zitzler, M. Laumanns, and L. Thiele, “SPEA2: Improving the Strength Pareto Evolutionary Algorithm,” 2001.
+- U. Junker, “QUICKXPLAIN: Preferred Explanations and Relaxations for Over-Constrained Problems,” AAAI, 2004.
+- M. Joseph and P. Pandya, “Finding Response Times in a Real-Time System,” *The Computer Journal*, 1986.
+- Gecode — generic constraint development environment: https://www.gecode.org/
+
+---
+
+# Security and Secrets
+
+Do not commit `.env` or API keys. Render secrets should be configured through the service environment. `.env.example` contains only variable names and safe placeholders.
+
+---
+
+# License
+
+MIT License. See [LICENSE](LICENSE).
