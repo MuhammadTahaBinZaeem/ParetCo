@@ -1,116 +1,375 @@
+'use strict';
+
 const { askFeatherlessJson } = require('./featherless');
+const { runNativeDse } = require('./native_verify');
 
-function transcript(messages) {
-  return (messages || [])
-    .filter(message => message && typeof message.content === 'string' && message.content.trim())
-    .map(message => `${String(message.role || 'user').toUpperCase()}: ${message.content}`)
-    .join('\n\n');
+const MAX_NATIVE_TESTS = Math.max(6, Math.min(24, Number(process.env.PARETOCO_UNSAT_MAX_TESTS) || 16));
+const MAX_VERIFIED_OPTIONS = 4;
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
-function normalizeTweak(tweak) {
-  if (!tweak || typeof tweak !== 'object') return null;
-  const type = String(tweak.type || '').toLowerCase();
-  if (!['period', 'power', 'area', 'cost', 'cores', 'utilization', 'procsused'].includes(type)) return null;
-  const value = Number(tweak.value);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return { type, value };
+function extractContext(messages) {
+  for (let i = (messages || []).length - 1; i >= 0; i--) {
+    const content = messages[i]?.content;
+    if (typeof content !== 'string') continue;
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && parsed.currentJob) return parsed;
+    } catch (_) {}
+  }
+  throw new Error('UNSAT Doctor requires the current DSE job context. Refresh the UI and try again.');
 }
 
-function normalizeOptions(options) {
-  if (!Array.isArray(options)) return [];
-  return options.slice(0, 3).map((option, index) => {
-    const suggestedTweak = normalizeTweak(option?.suggestedTweak);
-    if (!suggestedTweak) return null;
+function numberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizePatchOp(op) {
+  if (!op || typeof op !== 'object') return null;
+  const target = String(op.target || '');
+  const field = String(op.field || '');
+  const value = numberOrNull(op.value);
+  if (value === null) return null;
+
+  if (target === 'constraint' && ['period', 'latency'].includes(field)) {
     return {
-      title: String(option?.title || `Repair option ${index + 1}`),
-      explanation: String(option?.explanation || 'Adjust this constraint and rerun the native DSE engine to verify feasibility.'),
-      suggestedTweak,
-      verified: false
+      target,
+      field,
+      value: Math.max(0, Math.round(value)),
+      appName: op.appName ? String(op.appName) : undefined,
+      index: Number.isInteger(op.index) ? op.index : undefined
     };
-  }).filter(Boolean);
+  }
+
+  if (target === 'sysConstraint' && ['power', 'area', 'cost', 'utilization', 'procsUsed'].includes(field)) {
+    return { target, field, value: value > 0 ? Math.round(value) : -1 };
+  }
+
+  if (target === 'processor' && field === 'count') {
+    return {
+      target,
+      field,
+      value: Math.max(1, Math.round(value)),
+      model: op.model ? String(op.model) : undefined,
+      index: Number.isInteger(op.index) ? op.index : undefined
+    };
+  }
+
+  return null;
 }
 
-function deterministicFallback(messages) {
-  const text = transcript(messages);
-  const periodMatch = text.match(/"period"\s*:\s*(\d+(?:\.\d+)?)/i);
-  const powerMatch = text.match(/"power"\s*:\s*(\d+(?:\.\d+)?)/i);
-  const countMatch = text.match(/"count"\s*:\s*(\d+)/i);
+function normalizeCandidate(candidate, fallbackTitle = 'Repair candidate') {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const patch = (Array.isArray(candidate.patch) ? candidate.patch : []).map(normalizePatchOp).filter(Boolean);
+  if (patch.length === 0) return null;
+  return {
+    title: String(candidate.title || fallbackTitle),
+    explanation: String(candidate.explanation || 'This change is tested by the native ParetoCo solver.'),
+    patch
+  };
+}
 
-  const options = [];
-  if (periodMatch) {
-    const current = Number(periodMatch[1]);
-    options.push({
-      title: `Relax period bound from ${current} to ${Math.max(current + 10, Math.ceil(current * 1.5))} cycles`,
-      explanation: 'A tighter period bound is a common source of zero-solution DSE runs. This is a candidate relaxation, not a claim of feasibility.',
-      suggestedTweak: { type: 'period', value: Math.max(current + 10, Math.ceil(current * 1.5)) },
-      verified: false
+function applyPatch(job, patch) {
+  const next = deepClone(job);
+  next.constraints = Array.isArray(next.constraints) ? next.constraints : [];
+  next.sysConstraints = next.sysConstraints && typeof next.sysConstraints === 'object' ? next.sysConstraints : {};
+  next.platform = next.platform && typeof next.platform === 'object' ? next.platform : { processors: [] };
+  next.platform.processors = Array.isArray(next.platform.processors) ? next.platform.processors : [];
+
+  for (const op of patch || []) {
+    if (op.target === 'constraint') {
+      let idx = Number.isInteger(op.index) ? op.index : -1;
+      if (idx < 0 && op.appName) idx = next.constraints.findIndex(c => (c.appName || c.app_name) === op.appName);
+      if (idx < 0 && next.constraints.length === 1) idx = 0;
+      if (idx >= 0 && next.constraints[idx]) next.constraints[idx][op.field] = op.value;
+    } else if (op.target === 'sysConstraint') {
+      next.sysConstraints[op.field] = op.value;
+      if (op.field === 'power') next.sysConstraints.maxPower = op.value;
+      if (op.field === 'utilization') next.sysConstraints.maxUtil = op.value;
+    } else if (op.target === 'processor') {
+      let idx = Number.isInteger(op.index) ? op.index : -1;
+      if (idx < 0 && op.model) idx = next.platform.processors.findIndex(p => p.model === op.model);
+      if (idx < 0 && next.platform.processors.length === 1) idx = 0;
+      if (idx >= 0 && next.platform.processors[idx]) next.platform.processors[idx].count = op.value;
+    }
+  }
+  return next;
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const out = [];
+  for (const candidate of candidates) {
+    const normalized = normalizeCandidate(candidate);
+    if (!normalized) continue;
+    const key = JSON.stringify(normalized.patch);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function activeIsolationProbes(job) {
+  const probes = [];
+  const constraints = Array.isArray(job.constraints) ? job.constraints : [];
+  constraints.forEach((constraint, index) => {
+    for (const field of ['period', 'latency']) {
+      const current = Number(constraint[field]);
+      if (!(current > 0)) continue;
+      probes.push({
+        field,
+        current,
+        title: `Temporarily remove ${field} bound`,
+        patch: [{ target: 'constraint', index, appName: constraint.appName || constraint.app_name, field, value: 0 }]
+      });
+    }
+  });
+
+  const sys = job.sysConstraints || {};
+  for (const field of ['power', 'area', 'cost', 'utilization', 'procsUsed']) {
+    const current = Number(sys[field]);
+    if (!(current > 0)) continue;
+    probes.push({
+      field,
+      current,
+      title: `Temporarily remove ${field} constraint`,
+      patch: [{ target: 'sysConstraint', field, value: -1 }]
     });
   }
-  if (powerMatch && Number(powerMatch[1]) > 0) {
-    const current = Number(powerMatch[1]);
-    options.push({
-      title: `Increase power ceiling above ${current} mW`,
-      explanation: 'If the native platform minimum exceeds the current ceiling, the search is necessarily infeasible. The next run will verify this candidate.',
-      suggestedTweak: { type: 'power', value: Math.ceil(current * 1.5) },
-      verified: false
-    });
+  return probes;
+}
+
+function measuredRepairFromProbe(probe, summary) {
+  let value = null;
+  let label = probe.field;
+  if (probe.field === 'power' && Number.isFinite(summary.minPower)) value = Math.ceil(summary.minPower);
+  else if (probe.field === 'area' && Number.isFinite(summary.minArea)) value = Math.ceil(summary.minArea);
+  else if (probe.field === 'cost' && Number.isFinite(summary.minCost)) value = Math.ceil(summary.minCost);
+  else if (probe.field === 'period' && Number.isFinite(summary.minPeriod)) value = Math.ceil(summary.minPeriod);
+  else if (probe.field === 'utilization' && Number.isFinite(summary.maxUtilization)) value = Math.floor(summary.maxUtilization);
+
+  if (!(value > 0)) return null;
+  const originalOp = probe.patch[0];
+  return {
+    title: `Set ${label} constraint to ${value}`,
+    explanation: `Removing the ${label} constraint made the real native model feasible. The unconstrained native run measured ${value} as the relevant boundary; this exact value is tested again before being offered.`,
+    patch: [{ ...originalOp, value }]
+  };
+}
+
+async function nativeIsolation(job, onLog, budget) {
+  const verified = [];
+  let tested = 0;
+  for (const probe of activeIsolationProbes(job)) {
+    if (tested >= budget || verified.length >= MAX_VERIFIED_OPTIONS) break;
+    tested++;
+    onLog(`[UNSAT Doctor] Isolation test ${tested}/${budget}: ${probe.title}`);
+    try {
+      const relaxed = await runNativeDse(applyPatch(job, probe.patch));
+      if (!relaxed.ok || !relaxed.summary.feasible) continue;
+
+      const measured = measuredRepairFromProbe(probe, relaxed.summary);
+      if (measured && tested < budget) {
+        tested++;
+        onLog(`[UNSAT Doctor] Verifying measured boundary: ${measured.title}`);
+        const exact = await runNativeDse(applyPatch(job, measured.patch));
+        if (exact.ok && exact.summary.feasible) {
+          verified.push({
+            ...measured,
+            verified: true,
+            verificationEngine: 'native',
+            verifiedSolutions: exact.summary.solutionCount,
+            metrics: exact.summary,
+            verifiedJob: applyPatch(job, measured.patch)
+          });
+          continue;
+        }
+      }
+
+      verified.push({
+        title: probe.title.replace('Temporarily ', ''),
+        explanation: `The model became feasible only after removing this constraint in a real native run. A tighter single-number repair could not be verified within this bounded diagnostic pass.`,
+        patch: probe.patch,
+        verified: true,
+        verificationEngine: 'native',
+        verifiedSolutions: relaxed.summary.solutionCount,
+        metrics: relaxed.summary,
+        verifiedJob: applyPatch(job, probe.patch)
+      });
+    } catch (err) {
+      onLog(`[UNSAT Doctor] Isolation test failed: ${err.message}`);
+    }
   }
-  if (countMatch) {
-    const cores = Math.max(1, Number(countMatch[1]));
-    options.push({
-      title: `Add one processor core (${cores} → ${cores + 1})`,
-      explanation: 'Additional parallelism can relax timing pressure. The native engine must still verify the modified design.',
-      suggestedTweak: { type: 'cores', value: cores + 1 },
-      verified: false
-    });
+  return { verified, tested };
+}
+
+function systematicCandidates(job, broad = false) {
+  const candidates = [];
+  const multipliers = broad ? [2, 4, 8, 16, 32] : [1.25, 1.5, 2];
+  const constraints = Array.isArray(job.constraints) ? job.constraints : [];
+
+  constraints.forEach((constraint, index) => {
+    for (const field of ['period', 'latency']) {
+      const current = Number(constraint[field]);
+      if (!(current > 0)) continue;
+      for (const multiplier of multipliers) {
+        const value = Math.max(current + 1, Math.ceil(current * multiplier));
+        candidates.push({
+          title: `Relax ${field} bound to ${value}`,
+          explanation: `Tests a ${field} relaxation from ${current} to ${value} using the native solver.`,
+          patch: [{ target: 'constraint', index, appName: constraint.appName || constraint.app_name, field, value }]
+        });
+      }
+    }
+  });
+
+  const sys = job.sysConstraints || {};
+  for (const field of ['power', 'area', 'cost']) {
+    const current = Number(sys[field]);
+    if (!(current > 0)) continue;
+    for (const multiplier of multipliers) {
+      const value = Math.max(current + 1, Math.ceil(current * multiplier));
+      candidates.push({
+        title: `Relax ${field} ceiling to ${value}`,
+        explanation: `Tests a ${field} ceiling change from ${current} to ${value} with the native solver.`,
+        patch: [{ target: 'sysConstraint', field, value }]
+      });
+    }
   }
 
-  if (options.length === 0) {
-    options.push({
-      title: 'Relax the tightest application period bound',
-      explanation: 'The available context is insufficient to quantify a safe repair automatically. Increase the tightest period modestly and rerun the native engine.',
-      suggestedTweak: { type: 'period', value: 100 },
-      verified: false
-    });
+  const util = Number(sys.utilization);
+  if (util > 0) {
+    for (const multiplier of [0.9, 0.75, 0.5, 0.25]) {
+      const value = Math.max(1, Math.floor(util * multiplier));
+      if (value < util) candidates.push({
+        title: `Lower minimum utilization to ${value}%`,
+        explanation: `Tests a lower minimum-utilization requirement (${util}% → ${value}%) with the native solver.`,
+        patch: [{ target: 'sysConstraint', field: 'utilization', value }]
+      });
+    }
   }
-  return options.slice(0, 3);
+
+  const processors = job.platform?.processors || [];
+  processors.forEach((proc, index) => {
+    const count = Math.max(1, Number(proc.count) || 1);
+    for (const delta of broad ? [1, 2, 4, 8] : [1, 2]) {
+      candidates.push({
+        title: `Increase ${proc.model || `processor ${index + 1}`} cores to ${count + delta}`,
+        explanation: `Tests ${count + delta} instances of ${proc.model || 'this processor model'} using the native solver.`,
+        patch: [{ target: 'processor', index, model: proc.model, field: 'count', value: count + delta }]
+      });
+    }
+  });
+  return candidates;
+}
+
+async function aiCandidates(job, baselineResults, onLog) {
+  const systemPrompt = `You are the ParetoCo UNSAT repair planner. You propose hypotheses only; the native solver decides feasibility.
+Return JSON only:
+{"candidates":[{"title":"short name","explanation":"why it may help without claiming success","patch":[{"target":"constraint","index":0,"appName":"App","field":"period","value":100}]}]}
+Allowed operations:
+- constraint period or latency
+- sysConstraint power, area, cost, utilization, procsUsed; -1 removes it
+- processor count
+Return at most 4 small candidates. Never invent solution counts and never use words like verified/feasible unless referring to the later native check.`;
+  try {
+    onLog('[UNSAT Doctor] Asking Featherless for additional repair hypotheses...');
+    const result = await askFeatherlessJson(systemPrompt, JSON.stringify({
+      currentJob: job,
+      baselineResultTail: String(baselineResults || '').slice(-7000)
+    }));
+    return (Array.isArray(result.candidates) ? result.candidates : [])
+      .map((candidate, index) => normalizeCandidate(candidate, `AI repair candidate ${index + 1}`))
+      .filter(Boolean);
+  } catch (err) {
+    onLog(`[UNSAT Doctor] Featherless planning unavailable (${err.message}); continuing with native search.`);
+    return [];
+  }
+}
+
+async function verifyCandidates(job, candidates, onLog, budget) {
+  const verified = [];
+  let tested = 0;
+  for (const candidate of dedupeCandidates(candidates)) {
+    if (tested >= budget || verified.length >= MAX_VERIFIED_OPTIONS) break;
+    tested++;
+    onLog(`[UNSAT Doctor] Native candidate test ${tested}/${budget}: ${candidate.title}`);
+    try {
+      const trialJob = applyPatch(job, candidate.patch);
+      const verification = await runNativeDse(trialJob);
+      if (!verification.ok || !verification.summary.feasible) continue;
+      verified.push({
+        ...candidate,
+        verified: true,
+        verificationEngine: 'native',
+        verifiedSolutions: verification.summary.solutionCount,
+        metrics: verification.summary,
+        verifiedJob: trialJob
+      });
+    } catch (err) {
+      onLog(`[UNSAT Doctor] Candidate test failed: ${err.message}`);
+    }
+  }
+  return { verified, tested };
 }
 
 async function analyzeUnsatAgent(messages, onLog = () => {}) {
-  onLog('[UNSAT Doctor] Inspecting active constraints and platform...');
-  const systemPrompt = `You are ParetoCo's UNSAT diagnosis assistant.
-The supplied transcript contains the active application constraints, system constraints, WCET information when available, platform, and workload.
+  const context = extractContext(messages);
+  const job = deepClone(context.currentJob);
+  const baselineResults = context.baselineResults || '';
 
-Return ONLY JSON in this shape:
-{
-  "options": [
-    {
-      "title": "short repair title",
-      "explanation": "why this specific change may restore feasibility",
-      "suggestedTweak": {"type":"period|power|area|cost|cores|utilization|procsUsed","value":123}
-    }
-  ]
-}
-
-Rules:
-- Return at most 3 minimal, concrete repairs.
-- Prefer changing one thing at a time.
-- Do not invent a fake solver result or claim a repair is feasible. Every repair will be verified only after the real native DSE engine is rerun.
-- Respect the native semantics: power/area/cost are maximum bounds, utilization is a minimum percentage, and procsUsed is an exact active-processor count.
-- ParetoCo power units are mW and period/latency units are engine cycles.
-- If a power cap is clearly below observed/native output, recommend raising the cap rather than pretending the existing result satisfies it.
-- Do not recommend an operating mode that is absent from the supplied platform.`;
-
-  try {
-    const result = await askFeatherlessJson(systemPrompt, transcript(messages));
-    const options = normalizeOptions(result.options);
-    if (options.length === 0) throw new Error('UNSAT model returned no usable repair options.');
-    onLog(`[UNSAT Doctor] Generated ${options.length} candidate repair(s). Native rerun required for verification.`);
-    return { options };
-  } catch (error) {
-    onLog(`[UNSAT Doctor] AI diagnosis unavailable: ${error.message}. Using deterministic candidates.`);
-    return { options: deterministicFallback(messages), fallback: true };
+  onLog('[UNSAT Doctor] Re-running the current job with the native solver...');
+  const baseline = await runNativeDse(job);
+  if (baseline.ok && baseline.summary.feasible) {
+    return {
+      alreadyFeasible: true,
+      options: [],
+      baseline: baseline.summary,
+      message: `The current job is already feasible (${baseline.summary.solutionCount} native solution(s)).`
+    };
   }
+
+  let remaining = MAX_NATIVE_TESTS;
+  const isolated = await nativeIsolation(job, onLog, remaining);
+  remaining -= isolated.tested;
+  let verified = isolated.verified;
+
+  if (verified.length < MAX_VERIFIED_OPTIONS && remaining > 0) {
+    const ai = await aiCandidates(job, baselineResults, onLog);
+    const first = await verifyCandidates(job, [...ai, ...systematicCandidates(job, false)], onLog, remaining);
+    remaining -= first.tested;
+    verified = [...verified, ...first.verified];
+  }
+
+  if (verified.length === 0 && remaining > 0) {
+    const broad = await verifyCandidates(job, systematicCandidates(job, true), onLog, remaining);
+    remaining -= broad.tested;
+    verified = broad.verified;
+  }
+
+  const unique = [];
+  const seen = new Set();
+  for (const option of verified) {
+    const key = JSON.stringify(option.patch);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(option);
+    if (unique.length >= MAX_VERIFIED_OPTIONS) break;
+  }
+
+  const testedRuns = MAX_NATIVE_TESTS - remaining;
+  return {
+    options: unique,
+    testedRuns,
+    baseline: baseline.summary,
+    message: unique.length
+      ? `${unique.length} repair option(s) were verified by real native solver runs.`
+      : `No tested single repair produced a native solution within ${testedRuns} bounded attempts. The conflict may require a multi-parameter change.`
+  };
 }
 
-module.exports = { analyzeUnsatAgent };
+module.exports = { analyzeUnsatAgent, applyPatch };

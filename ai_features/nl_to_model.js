@@ -1,3 +1,5 @@
+'use strict';
+
 const { askFeatherlessJson } = require('./featherless');
 
 function transcript(messages) {
@@ -7,218 +9,164 @@ function transcript(messages) {
     .join('\n\n');
 }
 
-function positiveOrUnlimited(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : -1;
+function userText(messages) {
+  return (messages || [])
+    .filter(m => m && String(m.role || 'user').toLowerCase() === 'user' && typeof m.content === 'string')
+    .map(m => m.content)
+    .join('\n');
 }
 
-function normalizeActor(actor, index) {
-  if (typeof actor === 'string') {
-    const name = actor.trim() || `actor_${index}`;
-    return {
-      name,
-      type: name,
-      ports: [
-        { name: 'p_in', type: 'in', rate: 1 },
-        { name: 'p_out', type: 'out', rate: 1 }
-      ]
-    };
-  }
-
-  const name = String(actor?.name || actor?.type || `actor_${index}`);
-  let ports = Array.isArray(actor?.ports) ? actor.ports : [];
-  if (ports.length === 0) {
-    ports = [
-      { name: 'p_in', type: 'in', rate: 1 },
-      { name: 'p_out', type: 'out', rate: 1 }
-    ];
-  }
-
-  return {
-    ...actor,
-    name,
-    type: String(actor?.type || name),
-    ports: ports.map((port, pi) => ({
-      name: String(port?.name || (pi === 0 ? 'p_in' : 'p_out')),
-      type: String(port?.type || (pi === 0 ? 'in' : 'out')),
-      rate: Math.max(1, parseInt(port?.rate, 10) || 1)
-    }))
-  };
+function parseClockHz(text) {
+  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)\s*(ghz|mhz|khz|hz)\b/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier = unit === 'ghz' ? 1e9 : unit === 'mhz' ? 1e6 : unit === 'khz' ? 1e3 : 1;
+  return Number.isFinite(value) && value > 0 ? value * multiplier : null;
 }
 
-function normalizeApplication(app, index) {
-  const name = String(app?.name || `App${index + 1}`);
-  const actors = (Array.isArray(app?.actors) ? app.actors : []).map(normalizeActor);
-  const actorNames = new Set(actors.map(actor => actor.name));
+function durationSeconds(value, unit) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  const u = String(unit || '').toLowerCase().replace('μ', 'µ');
+  if (['s','sec','secs','second','seconds'].includes(u)) return number;
+  if (u === 'ms') return number / 1e3;
+  if (u === 'us' || u === 'µs') return number / 1e6;
+  if (u === 'ns') return number / 1e9;
+  return null;
+}
 
-  const channels = (Array.isArray(app?.channels) ? app.channels : []).map((channel, ci) => {
-    const src = String(channel?.srcActor || channel?.src || actors[ci % Math.max(1, actors.length)]?.name || 'src_node');
-    const dst = String(channel?.dstActor || channel?.dst || actors[(ci + 1) % Math.max(1, actors.length)]?.name || 'snk_node');
-    return {
-      ...channel,
-      name: String(channel?.name || `ch${ci + 1}`),
-      srcActor: src,
-      srcPort: String(channel?.srcPort || 'p_out'),
-      dstActor: dst,
-      dstPort: String(channel?.dstPort || 'p_in'),
-      initialTokens: Math.max(0, parseInt(channel?.initialTokens ?? channel?.tokens, 10) || 0),
-      size: Math.max(1, parseInt(channel?.size, 10) || 1)
-    };
-  }).filter(channel => actorNames.has(channel.srcActor) && actorNames.has(channel.dstActor));
+function findTimingConstraint(text, name) {
+  const re = new RegExp(`\\b${name}\\b[^\\d]{0,35}(\\d+(?:\\.\\d+)?)\\s*(cycles?|ms|us|µs|μs|ns|seconds?|secs?|sec|s)\\b`, 'i');
+  const match = String(text || '').match(re);
+  return match ? { value: Number(match[1]), unit: match[2].toLowerCase().replace('μ','µ') } : null;
+}
 
-  return { ...app, name, actors, channels };
+function findPowerLimitMilliwatts(text) {
+  const source = String(text || '');
+  for (const re of [
+    /\bpower(?:\s+(?:budget|limit|consumption))?\b[^\d]{0,35}(\d+(?:\.\d+)?)\s*(mw|w)\b/i,
+    /\b(?:under|below|max(?:imum)?|less than)\s*(\d+(?:\.\d+)?)\s*(mw|w)\b[^\n]{0,20}\bpower\b/i
+  ]) {
+    const match = source.match(re);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (value > 0) return Math.round(match[2].toLowerCase() === 'w' ? value * 1000 : value);
+  }
+  return null;
+}
+
+function normalizeExplicitUnits(model, messages) {
+  const text = userText(messages);
+  model.sysConstraints = model.sysConstraints && typeof model.sysConstraints === 'object' ? model.sysConstraints : {};
+  const powerMw = findPowerLimitMilliwatts(text);
+  if (powerMw !== null) model.sysConstraints.power = powerMw;
+
+  const clockHz = parseClockHz(text);
+  for (const [field, timing] of [
+    ['period', findTimingConstraint(text, 'period')],
+    ['latency', findTimingConstraint(text, 'latency')],
+    ['latency', findTimingConstraint(text, 'deadline')]
+  ]) {
+    if (!timing) continue;
+    let cycles;
+    if (/^cycles?$/.test(timing.unit)) {
+      cycles = Math.round(timing.value);
+    } else {
+      if (!clockHz) {
+        return { question: `You specified ${field} as ${timing.value} ${timing.unit}, but ParetoCo's native ${field} constraint is in processor cycles. What clock frequency should I use (for example, 1 GHz)?` };
+      }
+      const seconds = durationSeconds(timing.value, timing.unit);
+      if (seconds === null) continue;
+      cycles = Math.max(0, Math.round(seconds * clockHz));
+    }
+    if (!Array.isArray(model.constraints)) model.constraints = [];
+    if (model.constraints.length === 0 && model.applications?.[0]) {
+      model.constraints.push({ appName: model.applications[0].name || 'App', period: 0, latency: 0 });
+    }
+    if (model.constraints[0]) model.constraints[0][field] = cycles;
+  }
+  return { model };
 }
 
 function validateModel(model) {
   if (!model || typeof model !== 'object') throw new Error('AI did not return a DSE model object.');
-  if (!model.platform || !Array.isArray(model.platform.processors) || model.platform.processors.length === 0) {
-    throw new Error('AI model is missing platform.processors.');
-  }
-  if (!Array.isArray(model.applications) || model.applications.length === 0) {
-    throw new Error('AI model is missing applications.');
-  }
+  if (!model.platform || !Array.isArray(model.platform.processors) || model.platform.processors.length === 0) throw new Error('AI model is missing platform.processors.');
+  if (!Array.isArray(model.applications) || model.applications.length === 0) throw new Error('AI model is missing applications.');
 
-  model.platform.processors = model.platform.processors.map((proc, index) => {
-    const modelName = String(proc?.model || `Processor${index + 1}`);
-    const modes = Array.isArray(proc?.modes) && proc.modes.length > 0
-      ? proc.modes
-      : [{ name: 'default', cycle: 1, mem: 4096, dynPower: 10, staticPower: 2, area: 5, monetary: 10 }];
-    return {
-      ...proc,
-      model: modelName,
-      count: Math.max(1, parseInt(proc?.count, 10) || 1),
-      modes: modes.map(mode => ({
-        ...mode,
-        name: String(mode?.name || 'default'),
-        cycle: Number.isFinite(Number(mode?.cycle)) && Number(mode.cycle) > 0 ? Number(mode.cycle) : 1,
-        mem: Math.max(1, parseInt(mode?.mem, 10) || 4096),
-        dynPower: Math.max(0, Number(mode?.dynPower) || 0),
-        staticPower: Math.max(0, Number(mode?.staticPower) || 0),
-        area: Math.max(0, Number(mode?.area) || 0),
-        monetary: Math.max(0, Number(mode?.monetary) || 0)
-      }))
-    };
-  });
-
-  if (!Array.isArray(model.platform.interconnects)) {
-    model.platform.interconnects = model.platform.interconnect ? [model.platform.interconnect] : [];
-  }
-  if (model.platform.interconnects.length === 0) {
-    const totalCores = model.platform.processors.reduce((sum, proc) => sum + proc.count, 0);
-    model.platform.interconnects = [{ name: 'bus0', topology: 'TDMA-bus', xDim: Math.max(1, totalCores), yDim: 1, flitSize: 32, slots: Math.max(2, totalCores) }];
+  const processorNames = new Set();
+  const processorModes = new Map();
+  for (const processor of model.platform.processors) {
+    processor.model = String(processor.model || '').trim();
+    if (!processor.model) throw new Error('AI model contains a processor without a model name.');
+    if (processorNames.has(processor.model)) throw new Error(`AI model contains duplicate processor model ${processor.model}.`);
+    processorNames.add(processor.model);
+    processor.count = Math.max(1, parseInt(processor.count, 10) || 1);
+    if (!Array.isArray(processor.modes) || processor.modes.length === 0) processor.modes = [{ name:'default', cycle:1, mem:4096, dynPower:10, staticPower:2, area:5, monetary:10 }];
+    processorModes.set(processor.model, new Set(processor.modes.map(mode => String(mode.name || 'default'))));
   }
 
-  model.applications = model.applications.map(normalizeApplication);
-  const actorNames = new Set(model.applications.flatMap(app => app.actors.map(actor => actor.name)));
-  const processorNames = new Set(model.platform.processors.map(proc => proc.model));
-  const defaultProcessor = model.platform.processors[0].model;
-  const defaultMode = model.platform.processors[0].modes[0].name;
-
-  if (!Array.isArray(model.wcets)) model.wcets = [];
-  model.wcets = model.wcets
-    .filter(wcet => actorNames.has(String(wcet?.taskType || wcet?.name || '')))
-    .map(wcet => {
-      const processor = String(wcet?.procModel || wcet?.processor || defaultProcessor);
-      const normalizedProcessor = processorNames.has(processor) ? processor : defaultProcessor;
-      const proc = model.platform.processors.find(p => p.model === normalizedProcessor) || model.platform.processors[0];
-      const requestedMode = String(wcet?.mode || defaultMode);
-      const normalizedMode = proc.modes.some(mode => mode.name === requestedMode) ? requestedMode : proc.modes[0].name;
-      return {
-        taskType: String(wcet.taskType || wcet.name),
-        processor: normalizedProcessor,
-        procModel: normalizedProcessor,
-        mode: normalizedMode,
-        wcet: Math.max(1, parseInt(wcet?.wcet, 10) || 10)
-      };
-    });
-
-  for (const actorName of actorNames) {
-    if (!model.wcets.some(wcet => wcet.taskType === actorName)) {
-      model.wcets.push({ taskType: actorName, processor: defaultProcessor, procModel: defaultProcessor, mode: defaultMode, wcet: 10 });
+  const actorTypes = new Set();
+  for (const app of model.applications) {
+    app.name = String(app.name || 'App');
+    if (!Array.isArray(app.actors) || app.actors.length === 0) throw new Error(`Application ${app.name} has no actors.`);
+    const names = new Set();
+    for (const actor of app.actors) {
+      const actorName = typeof actor === 'string' ? actor : actor?.name;
+      const actorType = typeof actor === 'string' ? actor : (actor?.type || actor?.name);
+      if (!actorName) throw new Error(`Application ${app.name} contains an unnamed actor.`);
+      if (names.has(actorName)) throw new Error(`Application ${app.name} contains duplicate actor ${actorName}.`);
+      names.add(actorName);
+      actorTypes.add(String(actorType || actorName));
+    }
+    if (!Array.isArray(app.channels)) app.channels = [];
+    for (const channel of app.channels) {
+      const src = channel.srcActor || channel.src;
+      const dst = channel.dstActor || channel.dst;
+      if (!names.has(src) || !names.has(dst)) throw new Error(`Application ${app.name} channel ${channel.name || ''} references unknown actor(s): ${src} -> ${dst}.`);
+      channel.initialTokens = Math.max(0, parseInt(channel.initialTokens ?? channel.tokens, 10) || 0);
+      channel.size = Math.max(1, parseInt(channel.size, 10) || 1);
     }
   }
 
+  if (!Array.isArray(model.wcets)) model.wcets = [];
+  for (const wcet of model.wcets) {
+    const processor = wcet.procModel || wcet.processor;
+    if (!processorNames.has(processor)) throw new Error(`WCET for ${wcet.taskType || 'task'} references unknown processor ${processor}.`);
+    if (wcet.taskType && !actorTypes.has(String(wcet.taskType))) throw new Error(`WCET references unknown actor/task type ${wcet.taskType}.`);
+    const mode = String(wcet.mode || 'default');
+    if (!processorModes.get(processor)?.has(mode)) throw new Error(`WCET for ${wcet.taskType || 'task'} references unknown mode ${mode} on ${processor}.`);
+    wcet.procModel = processor;
+    wcet.processor = processor;
+    wcet.mode = mode;
+    wcet.wcet = Math.max(0, Number(wcet.wcet) || 0);
+  }
+
   if (!Array.isArray(model.constraints)) model.constraints = [];
-  model.constraints = model.constraints.map((constraint, index) => ({
-    appName: String(constraint?.appName || constraint?.app_name || model.applications[index]?.name || model.applications[0].name),
-    period: Math.max(0, parseInt(constraint?.period, 10) || 0),
-    latency: Math.max(0, parseInt(constraint?.latency, 10) || 0)
-  }));
-
-  const sys = model.sysConstraints && typeof model.sysConstraints === 'object' ? model.sysConstraints : {};
-  model.sysConstraints = {
-    power: positiveOrUnlimited(sys.power ?? sys.maxPower),
-    utilization: positiveOrUnlimited(sys.utilization ?? sys.minUtilization),
-    area: positiveOrUnlimited(sys.area),
-    cost: positiveOrUnlimited(sys.cost ?? sys.money),
-    procsUsed: positiveOrUnlimited(sys.procsUsed)
-  };
-
-  const incomingDse = model.dse || {};
-  const thProp = String(incomingDse.thProp || incomingDse.th_prop || 'SSE').toUpperCase();
-  model.dse = {
-    model: String(incomingDse.model || 'SDF_PR_ONLINE').toUpperCase(),
-    criteria: String(incomingDse.criteria || 'THROUGHPUT').toUpperCase(),
-    search: String(incomingDse.search || 'FIRST').toUpperCase(),
-    thProp,
-    th_prop: thProp
-  };
-
-  if (!['FIRST', 'ALL', 'OPTIMIZE', 'OPTIMIZE_IT'].includes(model.dse.search)) model.dse.search = 'FIRST';
-  if (!['POWER', 'THROUGHPUT', 'AREA', 'COST', 'NONE'].includes(model.dse.criteria)) model.dse.criteria = 'THROUGHPUT';
-  if (!['SSE', 'MCR'].includes(model.dse.thProp)) model.dse.thProp = model.dse.th_prop = 'SSE';
-
+  model.sysConstraints = model.sysConstraints && typeof model.sysConstraints === 'object' ? model.sysConstraints : { power:-1, utilization:-1, area:-1, cost:-1, procsUsed:-1 };
+  model.dse = { model:'SDF_PR_ONLINE', criteria:'THROUGHPUT', search:'FIRST', th_prop:'SSE', ...(model.dse || {}) };
+  model.dse.search = String(model.dse.search || 'FIRST').toUpperCase();
+  model.dse.criteria = String(model.dse.criteria || 'THROUGHPUT').toUpperCase();
+  model.dse.th_prop = String(model.dse.th_prop || model.dse.thProp || 'SSE').toUpperCase();
+  delete model.dse.thProp;
   return model;
 }
 
 async function convertNlToDseAgent(messages, onLog = () => {}) {
   onLog('[NL-to-DSE] Building a structured DSE model...');
   const systemPrompt = `You convert a user's embedded-system description into a ParetoCo DSE JSON model.
-
-Return one of these shapes:
-1) If essential information is genuinely missing: {"question":"one concise clarification question"}
-2) Otherwise: {"model": { ... }}
-
-The model object must use this schema:
-{
-  "platform": {
-    "processors": [
-      {"model":"ARM","count":2,"modes":[{"name":"default","cycle":1,"mem":4096,"dynPower":10,"staticPower":2,"area":5,"monetary":10}]}
-    ],
-    "interconnects": [{"name":"bus0","topology":"TDMA-bus","xDim":2,"yDim":1,"flitSize":32,"slots":2}]
-  },
-  "applications": [
-    {"name":"App","actors":[{"name":"a0","type":"a0"},{"name":"a1","type":"a1"}],"channels":[{"name":"c0","srcActor":"a0","dstActor":"a1","initialTokens":0}]}
-  ],
-  "wcets": [{"taskType":"a0","procModel":"ARM","mode":"default","wcet":10}],
-  "constraints": [{"appName":"App","period":100,"latency":0}],
-  "sysConstraints": {"power":-1,"utilization":-1,"area":-1,"cost":-1,"procsUsed":-1},
-  "dse": {"model":"SDF_PR_ONLINE","criteria":"THROUGHPUT","search":"FIRST","thProp":"SSE"}
-}
-
-Rules:
-- Infer reasonable defaults when the user gives enough context; do not ask about every missing optional number.
-- Actor names must be unique. Channel srcActor/dstActor values must exactly match actor names.
-- WCET taskType values must exactly match actor names/types used in the application.
-- Processor names in WCET entries must exactly match platform processor model names.
-- Use FIRST search by default for reliable hosted execution.
-- ParetoCo power values are in mW. Convert explicit watts to milliwatts (for example 15 W -> 15000 mW).
-- Application period/latency constraints are engine cycles. If the user only supplies a wall-clock deadline such as 33 ms but gives no timing/frequency information that permits a defensible cycle conversion, ask one concise clarification question rather than pretending milliseconds are cycles.
-- Preserve explicit constraints. Never silently relax a user's bound.`;
+Return {"question":"one concise clarification question"} only when essential information is missing; otherwise return {"model":{...}}.
+Canonical native units: period/latency in processor cycles; power in mW (12 W = 12000 mW); utilization in percent; memory in KB. If wall-clock time is supplied without a clock frequency, ask for the frequency instead of treating time as cycles.
+The model needs platform.processors+modes, platform.interconnects, applications with actors/channels, wcets, constraints, sysConstraints, and dse.
+Rules: WCET task types must match actor names/types; WCET processor+mode must exactly exist; channel endpoints must exist in the same app; use FIRST by default; preserve explicit limits and never silently relax them.`;
 
   const result = await askFeatherlessJson(systemPrompt, transcript(messages));
-  if (result.question) {
-    const question = String(result.question);
-    // The browser sends this message history back on the next turn. Preserve the
-    // assistant's clarification question so the user's reply has its context.
-    if (Array.isArray(messages)) messages.push({ role: 'assistant', content: question });
-    onLog('[NL-to-DSE] Clarification required.');
-    return { question };
-  }
-
+  if (result.question) { onLog('[NL-to-DSE] Clarification required.'); return { question: String(result.question) }; }
   const model = validateModel(result.model || result);
-  onLog('[NL-to-DSE] Model generated, normalized, and validated.');
-  return { model };
+  const normalized = normalizeExplicitUnits(model, messages);
+  if (normalized.question) { onLog('[NL-to-DSE] Unit conversion requires clarification.'); return normalized; }
+  onLog('[NL-to-DSE] Model generated, unit-normalized, and cross-reference validated.');
+  return { model: normalized.model };
 }
 
 module.exports = { convertNlToDseAgent, validateModel };
