@@ -355,3 +355,75 @@ const PRESETS = {
       { taskType: 'frame_out', procModel: 'Eco_Core', mode: 'eco', wcet: 7 }
     ],
     dse: {
+      model: 'SDF_PR_ONLINE',
+      criteria: 'POWER',
+      search: 'FIRST',
+      th_prop: 'MCR'
+    }
+  }
+};
+
+// Launch DSE Solver Execution
+async function handleLaunchRequest(req, res, body) {
+  let jobData;
+  try {
+    jobData = JSON.parse(body);
+  } catch (e) {
+    jobData = { configText: body };
+  }
+
+  const nativeEngine = findNativeEngine();
+  const requireNative = nativeRequired();
+
+  if (!nativeEngine) {
+    if (requireNative) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Native ParetoCo engine is required but unavailable. On Linux/Render, verify Wine is installed and paretoco-engine-release/paretoco-engine.exe is present.',
+        nativeRequired: true
+      }));
+      return;
+    }
+    const result = runAnalyticalDseFallback(jobData);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  // Create isolated temp workspace
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'paretoco_web_job_'));
+  const sdfsDir = path.join(tempDir, 'sdfs');
+  fs.mkdirSync(sdfsDir, { recursive: true });
+
+  try {
+    // Write platform XML
+    let platformXml = jobData.platformXml;
+    if (!platformXml && jobData.platform) {
+      platformXml = `<?xml version="1.0" encoding="UTF-8"?>\n<platform xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n`;
+      (jobData.platform.processors || []).forEach(p => {
+        platformXml += `  <processor model="${p.model}" number="${p.count || 1}">\n`;
+        (p.modes || [{ name: 'default', cycle: 1, mem: 4096 }]).forEach(m => {
+          platformXml += `    <mode name="${m.name}" cycle="${m.cycle || 1}" mem="${m.mem || 4096}" dynPower="${m.dynPower || 10}" staticPower="${m.staticPower || 2}" area="${m.area || 5}" monetary="${m.monetary || 10}" />\n`;
+        });
+        platformXml += `  </processor>\n`;
+      });
+      platformXml += `  <interconnect>\n    <TDMA_bus name="bus0" x-dimension="2" flitSize="32" tdma_slots="2" maxSlotsPerProc="2">\n      <mode name="default" cycleLength="1" dynPower_NI="1" dynPower_bus="1" staticPower_NI="1" staticPower_bus="1" area_NI="1" area_bus="1" monetary_NI="1" monetary_bus="1" />\n    </TDMA_bus>\n  </interconnect>\n</platform>\n`;
+    }
+    if (!platformXml) {
+      platformXml = `<?xml version="1.0" encoding="UTF-8"?>\n<platform xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n  <processor model="ARM" number="2">\n    <mode name="default" cycle="1" mem="4096" dynPower="10" staticPower="2" area="5" monetary="10" />\n  </processor>\n  <interconnect>\n    <TDMA_bus name="bus0" x-dimension="2" flitSize="32" tdma_slots="2" maxSlotsPerProc="2">\n      <mode name="default" cycleLength="1" dynPower_NI="1" dynPower_bus="1" staticPower_NI="1" staticPower_bus="1" area_NI="1" area_bus="1" monetary_NI="1" monetary_bus="1" />\n    </TDMA_bus>\n  </interconnect>\n</platform>\n`;
+    }
+    fs.writeFileSync(path.join(tempDir, 'platform.xml'), platformXml);
+
+    // Write SDF applications
+    const apps = (jobData.applications && jobData.applications.length > 0) ? jobData.applications : [
+      {
+        name: 'TestApp',
+        actors: ['src_node', 'proc_node', 'snk_node'],
+        channels: [
+          { name: 'ch1', srcActor: 'src_node', srcPort: 'p_out', dstActor: 'proc_node', dstPort: 'p_in', initialTokens: 0, size: 1 },
+          { name: 'ch2', srcActor: 'proc_node', srcPort: 'p_out', dstActor: 'snk_node', dstPort: 'p_in', initialTokens: 0, size: 1 },
+          { name: 'ch3', srcActor: 'snk_node', srcPort: 'p_out', dstActor: 'src_node', dstPort: 'p_in', initialTokens: 1, size: 1 }
+        ]
+      }
+    ];
