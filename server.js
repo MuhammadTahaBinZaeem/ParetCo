@@ -427,3 +427,74 @@ async function handleLaunchRequest(req, res, body) {
         ]
       }
     ];
+
+    const sdfFiles = [];
+    apps.forEach(app => {
+      const appName = app.name || 'App';
+      const actors = app.actors || ['src_node', 'proc_node', 'snk_node'];
+      const channels = app.channels || [];
+      let appXml = `<?xml version="1.0" encoding="UTF-8"?>\n<sdf3 type="sdf" name="${appName}" xsi:noNamespaceSchemaLocation="http://www.es.ele.tue.nl/sdf3/xsd/sdf3-sdf.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n  <applicationGraph name="${appName}">\n    <sdf name="${appName}" type="${appName}">\n`;
+      actors.forEach(actName => {
+        const aName = typeof actName === 'string' ? actName : (actName.name || 'act');
+        appXml += `      <actor name="${aName}" type="${aName}">\n        <port name="p_in" type="in" rate="1" />\n        <port name="p_out" type="out" rate="1" />\n      </actor>\n`;
+      });
+      if (channels.length === 0) {
+        for (let i = 0; i < actors.length; i++) {
+          const src = typeof actors[i] === 'string' ? actors[i] : actors[i].name;
+          const dst = typeof actors[(i + 1) % actors.length] === 'string' ? actors[(i + 1) % actors.length] : actors[(i + 1) % actors.length].name;
+          const initTok = (i === actors.length - 1) ? 1 : 0;
+          appXml += `      <channel name="ch${i+1}" srcActor="${src}" srcPort="p_out" dstActor="${dst}" dstPort="p_in" initialTokens="${initTok}" size="1" />\n`;
+        }
+      } else {
+        channels.forEach((ch, idx) => {
+          const src = ch.srcActor || ch.src || 'src_node';
+          const dst = ch.dstActor || ch.dst || 'snk_node';
+          const tokens = ch.initialTokens ?? (ch.tokens || 0);
+          appXml += `      <channel name="${ch.name || 'ch'+idx}" srcActor="${src}" srcPort="p_out" dstActor="${dst}" dstPort="p_in" initialTokens="${tokens}" size="1" />\n`;
+        });
+      }
+      appXml += `    </sdf>\n  </applicationGraph>\n</sdf3>\n`;
+      const fileName = `${appName}.xml`;
+      fs.writeFileSync(path.join(sdfsDir, fileName), appXml);
+      sdfFiles.push(`sdfs/${fileName}`);
+    });
+
+    // Write WCET table
+    const procs = jobData.platform?.processors || [{ model: 'ARM' }];
+    const firstProcModel = procs[0]?.model || 'ARM';
+    const firstMode = procs[0]?.modes?.[0]?.name || 'default';
+
+    const wcetList = jobData.wcets && jobData.wcets.length > 0 ? jobData.wcets : [];
+    let wcetXml = `<?xml version="1.0" encoding="UTF-8"?>\n<WCET_table xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n`;
+    
+    if (wcetList.length > 0) {
+      wcetList.forEach(w => {
+        const taskType = w.taskType || w.name || 'node';
+        const pModel = w.procModel || firstProcModel;
+        const pMode = w.mode || firstMode;
+        const wcetVal = w.wcet || 10;
+        wcetXml += `  <systemMapping task_type="${taskType}">\n    <wcet processor="${pModel}" mode="${pMode}" wcet="${wcetVal}" />\n  </systemMapping>\n`;
+      });
+    } else {
+      apps.forEach(app => {
+        (app.actors || []).forEach(act => {
+          const taskType = typeof act === 'string' ? act : (act.name || 'node');
+          wcetXml += `  <systemMapping task_type="${taskType}">\n    <wcet processor="${firstProcModel}" mode="${firstMode}" wcet="15" />\n  </systemMapping>\n`;
+        });
+      });
+    }
+    wcetXml += `</WCET_table>\n`;
+    fs.writeFileSync(path.join(tempDir, 'wcets.xml'), wcetXml);
+
+    // Write Design Constraints XML
+    let constraintsXml = jobData.constraintsXml;
+    if (!constraintsXml && jobData.constraints && jobData.constraints.length > 0) {
+      constraintsXml = `<?xml version="1.0" encoding="UTF-8"?>\n<designConstraints>\n`;
+      jobData.constraints.forEach(c => {
+        constraintsXml += `  <constraint app_name="${c.appName || 'App'}" period="${c.period || 0}" latency="${c.latency || 0}"></constraint>\n`;
+      });
+      constraintsXml += `</designConstraints>\n`;
+    }
+    if (constraintsXml) {
+      fs.writeFileSync(path.join(tempDir, 'desConst.xml'), constraintsXml);
+    }
