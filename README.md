@@ -7,7 +7,9 @@
 > **AI does not invent the optimum. ParetoCo uses deterministic/native computation to explore feasible designs; AI helps researchers formulate, navigate, and understand the experiment.**
 
 **Impact Forge Track:** Computational Research.
+
 **Team:** Muhammad Taha Bin Zaeem · Alizay Hasan · Lameea Mubashir Khan · Idrees Babar .
+
 **Submission:** [ParetoCo on Devpost](https://devpost.com/software/paretoco) .
 
 ---
