@@ -156,3 +156,56 @@
           <div class="card-body">
             <canvas id="sdf-canvas" width="800" height="400"></canvas>
           </div>
+        </div>
+        <div class="card card-sm">
+          <div class="card-header"><h2>Platform Summary</h2></div>
+          <div class="card-body" id="platform-summary">
+            <div class="empty-state">
+              <p>Import a <code>platform.xml</code> to see processor and interconnect details.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Engine Output</h2>
+          <button class="btn btn-sm btn-outline" id="btn-clear-log">Clear</button>
+        </div>
+        <div class="card-body">
+          <pre class="log-output" id="log-output">Waiting for engine launch…</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ PLATFORM ══════════ -->
+    <section class="page" id="page-platform">
+      <div class="card">
+        <div class="card-header">
+          <h2>Platform Definition</h2>
+          <div class="card-actions">
+            <button class="btn btn-sm btn-outline" id="btn-load-platform-xml">Load platform.xml</button>
+            <button class="btn btn-sm btn-primary" id="btn-add-processor">+ Add Processor</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <table id="platform-table" class="hidden">
+            <thead><tr><th>Model</th><th>Count</th><th>Mode</th><th>Memory</th><th>Dyn Power</th><th>Static Power</th><th>Area</th><th>Cost</th><th></th></tr></thead>
+            <tbody id="platform-tbody"></tbody>
+          </table>
+          <div class="empty-state" id="platform-empty">
+            <p>No processors defined. Click <strong>+ Add Processor</strong> or import a <code>platform.xml</code>.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Interconnect</h2>
+          <button class="btn btn-sm btn-primary" id="btn-add-interconnect">+ Add NoC</button>
+        </div>
+        <div class="card-body">
+          <div id="interconnect-list"></div>
+          <div class="empty-state" id="interconnect-empty"><p>No interconnect defined.</p></div>
+        </div>
+      </div>
+    </section>
