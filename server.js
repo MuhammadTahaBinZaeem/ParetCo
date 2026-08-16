@@ -641,3 +641,75 @@ async function handleLaunchRequest(req, res, body) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: err.message }));
     } else {
+      const fallback = runAnalyticalDseFallback(jobData);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(fallback));
+    }
+  }
+}
+
+// Create HTTP Server
+const server = http.createServer((req, res) => {
+  // CORS Headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = parsedUrl.pathname;
+
+  // API Endpoints
+  if (pathname === '/api/health' || pathname === '/healthz') {
+    const nativeEngine = findNativeEngine();
+    const healthy = !nativeRequired() || Boolean(nativeEngine);
+    res.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: healthy ? 'ok' : 'native-engine-unavailable',
+      time: new Date().toISOString(),
+      nativeRequired: nativeRequired(),
+      nativeEngine: nativeEngineLabel(nativeEngine),
+      executionMode: nativeEngine ? nativeEngine.mode : null
+    }));
+    return;
+  }
+
+  if (pathname === '/api/status') {
+    const nativeEngine = findNativeEngine();
+    const ready = !nativeRequired() || Boolean(nativeEngine);
+    res.writeHead(ready ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: ready ? 'ready' : 'native-engine-unavailable',
+      nativeRequired: nativeRequired(),
+      nativeEngine: nativeEngineLabel(nativeEngine),
+      enginePath: nativeEngine ? nativeEngine.enginePath : null,
+      executionMode: nativeEngine ? nativeEngine.mode : null,
+      platform: process.platform,
+      arch: process.arch,
+      nodeVersion: process.version
+    }));
+    return;
+  }
+
+  if (pathname === '/api/presets') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(PRESETS));
+    return;
+  }
+
+  if (pathname === '/api/launch' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      handleLaunchRequest(req, res, body);
+    });
+    return;
+  }
+
+  if (pathname === '/api/ai/insights' && req.method === 'POST') {
+    let body = '';
