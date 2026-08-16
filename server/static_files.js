@@ -21,18 +21,34 @@ const MIME_TYPES = {
 };
 
 function resolveUiPath(pathname) {
-  const decoded = decodeURIComponent(pathname || '/');
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname || '/');
+  } catch (_) {
+    return null;
+  }
   const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
   const candidate = path.resolve(UI_DIR, relative);
   if (!candidate.startsWith(`${UI_DIR}${path.sep}`) && candidate !== UI_DIR) return null;
   return candidate;
 }
 
+function cacheControlFor(ext) {
+  // The dashboard is actively iterated and its scripts must not survive a
+  // deployment in a browser cache. Images may be cached briefly.
+  if (['.html', '.js', '.css', '.json', '.xml'].includes(ext)) return 'no-store, max-age=0';
+  if (['.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp'].includes(ext)) return 'public, max-age=3600';
+  return 'no-cache';
+}
+
 function sendFile(res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   res.writeHead(200, {
     'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-    'X-Content-Type-Options': 'nosniff'
+    'Cache-Control': cacheControlFor(ext),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'same-origin',
+    'X-Frame-Options': 'SAMEORIGIN'
   });
   fs.createReadStream(filePath).pipe(res);
 }
@@ -40,7 +56,7 @@ function sendFile(res, filePath) {
 function serveStatic(pathname, res) {
   const filePath = resolveUiPath(pathname);
   if (!filePath) {
-    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end('Bad Request');
     return;
   }
@@ -54,7 +70,7 @@ function serveStatic(pathname, res) {
     const indexPath = path.join(UI_DIR, 'index.html');
     fs.stat(indexPath, (indexError, indexStats) => {
       if (indexError || !indexStats.isFile()) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end('404 Not Found');
         return;
       }
@@ -63,4 +79,4 @@ function serveStatic(pathname, res) {
   });
 }
 
-module.exports = { serveStatic };
+module.exports = { serveStatic, resolveUiPath, cacheControlFor };

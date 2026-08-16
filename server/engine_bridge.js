@@ -16,8 +16,12 @@ const { runAnalyticalDse } = require('./analytical_engine');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const MAX_CAPTURE_BYTES = Math.max(1_000_000, Number(process.env.PARETOCO_NATIVE_MAX_CAPTURE_BYTES) || 8_000_000);
+const MAX_NATIVE_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.PARETOCO_NATIVE_CONCURRENCY) || 1));
+const MAX_NATIVE_QUEUE = Math.max(1, Math.min(50, Number(process.env.PARETOCO_NATIVE_QUEUE_LIMIT) || 12));
 let cachedWineBinary;
 let cachedEngine;
+let activeNativeJobs = 0;
+const nativeWaiters = [];
 
 function nativeRequired() {
   return String(process.env.PARETOCO_REQUIRE_NATIVE || '').toLowerCase() === 'true';
@@ -101,6 +105,35 @@ function buildExecutionEnv(engine) {
   return env;
 }
 
+function killProcessTree(child) {
+  if (!child?.pid) return;
+  try {
+    if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+    else child.kill('SIGKILL');
+  } catch (_) {
+    try { child.kill('SIGKILL'); } catch (_) {}
+  }
+}
+
+function acquireNativeSlot() {
+  if (activeNativeJobs < MAX_NATIVE_CONCURRENCY) {
+    activeNativeJobs += 1;
+    return Promise.resolve();
+  }
+  if (nativeWaiters.length >= MAX_NATIVE_QUEUE) {
+    const error = new Error('Native DSE queue is full. Wait for the current exploration to finish and try again.');
+    error.code = 'NATIVE_BUSY';
+    return Promise.reject(error);
+  }
+  return new Promise(resolve => nativeWaiters.push(resolve)).then(() => { activeNativeJobs += 1; });
+}
+
+function releaseNativeSlot() {
+  activeNativeJobs = Math.max(0, activeNativeJobs - 1);
+  const next = nativeWaiters.shift();
+  if (next) next();
+}
+
 function executeNative(job, options = {}) {
   const engine = findNativeEngine();
   if (!engine) return Promise.reject(Object.assign(new Error('Native ParetoCo engine is unavailable.'), { code: 'NATIVE_UNAVAILABLE' }));
@@ -118,7 +151,8 @@ function executeNative(job, options = {}) {
     const child = spawn(engine.command, [...engine.prefixArgs, '--config', 'config.cfg'], {
       cwd: tempDir,
       env: buildExecutionEnv(engine),
-      windowsHide: true
+      windowsHide: true,
+      detached: process.platform !== 'win32'
     });
 
     let stdout = '';
@@ -126,7 +160,7 @@ function executeNative(job, options = {}) {
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      try { child.kill('SIGKILL'); } catch (_) {}
+      killProcessTree(child);
     }, timeoutMs);
     timer.unref?.();
 
@@ -196,6 +230,15 @@ function executeNative(job, options = {}) {
   });
 }
 
+async function executeNativeQueued(job, options = {}) {
+  await acquireNativeSlot();
+  try {
+    return await executeNative(job, options);
+  } finally {
+    releaseNativeSlot();
+  }
+}
+
 async function runDseJob(job, options = {}) {
   const validation = validateStructuredLaunchJob(job);
   if (!validation.valid) {
@@ -206,7 +249,7 @@ async function runDseJob(job, options = {}) {
   }
 
   try {
-    return await executeNative(job, options);
+    return await executeNativeQueued(job, options);
   } catch (error) {
     if (nativeRequired() || options.requireNative === true) throw error;
     const fallback = runAnalyticalDse(job);
@@ -222,6 +265,9 @@ function engineStatus() {
     nativeEngine: nativeEngineLabel(engine),
     enginePath: engine?.enginePath || null,
     executionMode: engine?.mode || null,
+    nativeConcurrency: MAX_NATIVE_CONCURRENCY,
+    activeNativeJobs,
+    queuedNativeJobs: nativeWaiters.length,
     platform: process.platform,
     arch: process.arch,
     nodeVersion: process.version
