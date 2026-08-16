@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+ai_features/node_modules/
+
+# Build artifacts
+engine/build/
+dist/
+out/
+
+# Native/Wine runtime state
+.wine-prefix/
+.wine/
+
+# Test output
+tests/run_30_results.json
+tests/fixtures/generated/run_*/out/
+tests/fixtures/generated/run_*/output.log
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+!.env.example
