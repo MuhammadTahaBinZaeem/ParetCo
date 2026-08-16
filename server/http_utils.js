@@ -59,9 +59,8 @@ async function readJson(req, limitBytes = MAX_BODY_BYTES) {
 
 function errorStatus(error) {
   if (error?.code === 'BODY_TOO_LARGE') return 413;
-  if (error?.code === 'INVALID_JSON' || error?.code === 'INVALID_JOB') return 400;
-  if (error?.code === 'REQUEST_ABORTED') return 400;
-  if (error?.code === 'NATIVE_UNAVAILABLE') return 503;
+  if (error?.code === 'INVALID_JSON' || error?.code === 'INVALID_JOB' || error?.code === 'REQUEST_ABORTED') return 400;
+  if (error?.code === 'NATIVE_UNAVAILABLE' || error?.code === 'NATIVE_BUSY') return 503;
   if (error?.code === 'NATIVE_TIMEOUT') return 504;
   return 500;
 }
