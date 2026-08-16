@@ -1,6 +1,40 @@
 'use strict';
 
 const PRESETS = {
+  demo: {
+    name: 'ParetoCo Native Demo (Dual ARM + TestApp)',
+    description: 'Exact stable model used by the Load Demo button and production native smoke test.',
+    platform: {
+      name: 'dual_arm_demo',
+      processors: [
+        { model: 'ARM', count: 2, modes: [{ name: 'default', cycle: 1, mem: 4096, dynPower: 10, staticPower: 2, area: 5, monetary: 10 }] }
+      ],
+      interconnects: [{ name: 'bus0', topology: 'TDMA-bus', xDim: 2, yDim: 1, flitSize: 32, slots: 2, maxSlotsPerProc: 2 }]
+    },
+    applications: [{
+      name: 'TestApp',
+      actors: [
+        { name: 'src_node', type: 'src_node', ports: [{ name: 'p_in', type: 'in', rate: 1 }, { name: 'p_out', type: 'out', rate: 1 }] },
+        { name: 'proc_node', type: 'proc_node', ports: [{ name: 'p_in', type: 'in', rate: 1 }, { name: 'p_out', type: 'out', rate: 1 }] },
+        { name: 'snk_node', type: 'snk_node', ports: [{ name: 'p_in', type: 'in', rate: 1 }, { name: 'p_out', type: 'out', rate: 1 }] }
+      ],
+      channels: [
+        { name: 'ch1', srcActor: 'src_node', srcPort: 'p_out', dstActor: 'proc_node', dstPort: 'p_in', initialTokens: 0, size: 1 },
+        { name: 'ch2', srcActor: 'proc_node', srcPort: 'p_out', dstActor: 'snk_node', dstPort: 'p_in', initialTokens: 0, size: 1 },
+        { name: 'ch3', srcActor: 'snk_node', srcPort: 'p_out', dstActor: 'src_node', dstPort: 'p_in', initialTokens: 1, size: 1 }
+      ]
+    }],
+    wcets: [
+      { taskType: 'src_node', procModel: 'ARM', mode: 'default', wcet: 10 },
+      { taskType: 'proc_node', procModel: 'ARM', mode: 'default', wcet: 25 },
+      { taskType: 'snk_node', procModel: 'ARM', mode: 'default', wcet: 15 }
+    ],
+    constraints: [],
+    sysConstraints: { power: -1, utilization: -1, area: -1, cost: -1, procsUsed: -1 },
+    dse: { model: 'SDF_PR_ONLINE', criteria: 'THROUGHPUT', search: 'FIRST', th_prop: 'SSE', threads: 0, timeout1: 0, timeout2: 0, lubyScale: 0, noGoodDepth: 75 },
+    presolver: { model: 'NONE', search: 'NONESEARCH', heuristic: 'NONE', multiSearch: 'NONESEARCH', timeout1: 0, timeout2: 0 },
+    output: { type: 'ALL_OUT', freq: 'ALL_SOL', logLevel: 'INFO' }
+  },
   sobel: {
     name: 'Sobel Filter (Dual-Core ARM Platform)',
     description: 'Classic edge detection image pipeline mapped onto a 2-core ARM platform with TDMA bus interconnect.',
