@@ -147,3 +147,152 @@
         name: ic.getAttribute("name"),
         topology: ic.getAttribute("topology") || "",
         xDim: parseInt(ic.getAttribute("x-dimension")) || 0,
+        yDim: parseInt(ic.getAttribute("y-dimension")) || 0,
+        routing: ic.getAttribute("routing") || "",
+        flitSize: parseInt(ic.getAttribute("flitSize")) || 0,
+        cycles: parseInt(ic.getAttribute("cycles")) || 0,
+      });
+    });
+
+    state.platform = { processors: procs, interconnects: ics };
+    renderPlatform();
+    updateKPIs();
+    toast(`Platform loaded: ${procs.length} processor type(s)`, "success");
+  }
+
+  // ── SDF XML Parser ──────────────────────────────────────────
+  function parseSdfXml(text, filename) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "text/xml");
+    const appGraph = doc.querySelector("applicationGraph");
+    const name = appGraph ? appGraph.getAttribute("name") : filename.replace(/\..*$/, "");
+
+    const actors = [];
+    const channels = [];
+    doc.querySelectorAll("actor").forEach(a => {
+      const ports = [];
+      a.querySelectorAll("port").forEach(p => {
+        ports.push({ name: p.getAttribute("name"), type: p.getAttribute("type"), rate: parseInt(p.getAttribute("rate")) || 1 });
+      });
+      actors.push({ name: a.getAttribute("name"), type: a.getAttribute("type"), ports });
+    });
+    doc.querySelectorAll("channel").forEach(c => {
+      channels.push({
+        name: c.getAttribute("name"),
+        srcActor: c.getAttribute("srcActor"),
+        srcPort: c.getAttribute("srcPort"),
+        dstActor: c.getAttribute("dstActor"),
+        dstPort: c.getAttribute("dstPort"),
+      });
+    });
+
+    // Check duplicate
+    const existing = state.applications.findIndex(a => a.name === name);
+    if (existing >= 0) state.applications[existing] = { name, actors, channels };
+    else state.applications.push({ name, actors, channels });
+
+    renderApplications();
+    updateKPIs();
+    populateAppSelector();
+    toast(`SDF graph "${name}" loaded: ${actors.length} actors, ${channels.length} channels`, "success");
+  }
+
+  // ── WCET XML Parser ─────────────────────────────────────────
+  function parseWcetXml(text) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "text/xml");
+    state.wcets = [];
+    doc.querySelectorAll("mapping").forEach(m => {
+      const taskType = m.getAttribute("task_type");
+      m.querySelectorAll("wcet").forEach(w => {
+        state.wcets.push({
+          taskType,
+          processor: w.getAttribute("processor"),
+          mode: w.getAttribute("mode"),
+          wcet: parseInt(w.getAttribute("wcet")) || 0,
+        });
+      });
+    });
+    renderWcets();
+    toast(`WCET table loaded: ${state.wcets.length} entries`, "success");
+  }
+
+  // ── Design Constraints Parser ───────────────────────────────
+  function parseConstraintsXml(text) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "text/xml");
+    state.constraints = [];
+    doc.querySelectorAll("constraint").forEach(c => {
+      state.constraints.push({
+        appName: c.getAttribute("app_name"),
+        period: parseInt(c.getAttribute("period")) || 0,
+        latency: parseInt(c.getAttribute("latency")) || 0,
+      });
+    });
+    renderConstraints();
+    toast(`Constraints loaded: ${state.constraints.length} entries`, "success");
+  }
+
+  // ── Config.cfg Parser ───────────────────────────────────────
+  function parseConfig(text) {
+    const lines = text.split(/\r?\n/);
+    let section = "";
+    const inputPaths = [];
+
+    lines.forEach(line => {
+      line = line.trim();
+      if (!line || line.startsWith("#")) return;
+      const secMatch = line.match(/^\[(.+)\]$/);
+      if (secMatch) { section = secMatch[1]; return; }
+      const [key, ...rest] = line.split("=");
+      const val = rest.join("=").trim();
+      const k = key.trim();
+
+      if (section === "") {
+        if (k === "inputs") inputPaths.push(val);
+        else if (k === "output-file-type") state.output.type = val.toUpperCase();
+        else if (k === "output-print-frequency") state.output.freq = val;
+        else if (k === "print-metric") state.output.metric = val.toUpperCase();
+        else if (k === "log-level" && !state._logLevelSet) { state.output.logLevel = val.toUpperCase(); state._logLevelSet = true; }
+      } else if (section === "dse") {
+        if (k === "model") state.dse.model = val.toUpperCase();
+        else if (k === "search") state.dse.search = val.toUpperCase();
+        else if (k === "criteria") state.dse.criteria = val.toUpperCase();
+        else if (k === "threads") state.dse.threads = parseInt(val) || 0;
+        else if (k === "timeout" && !state._dseT1Set) { state.dse.timeout1 = parseInt(val) || 0; state._dseT1Set = true; }
+        else if (k === "timeout") state.dse.timeout2 = parseInt(val) || 0;
+        else if (k === "luby_scale") state.dse.lubyScale = parseInt(val) || 0;
+        else if (k === "noGoodDepth") state.dse.noGoodDepth = parseInt(val) || 0;
+        else if (k === "th_prop") state.dse.thProp = val.toUpperCase();
+      } else if (section === "presolver") {
+        if (k === "model") state.presolver.model = val.toUpperCase();
+        else if (k === "search") state.presolver.search = val.toUpperCase();
+        else if (k === "heuristic") state.presolver.heuristic = val.toUpperCase();
+        else if (k === "multi-search") state.presolver.multiSearch = val.toUpperCase();
+        else if (k === "timeout" && !state._preT1Set) { state.presolver.timeout1 = parseInt(val) || 0; state._preT1Set = true; }
+        else if (k === "timeout") state.presolver.timeout2 = parseInt(val) || 0;
+      }
+    });
+
+    // Clean up temp flags
+    delete state._logLevelSet;
+    delete state._dseT1Set;
+    delete state._preT1Set;
+
+    syncFormFromState();
+    toast("Configuration imported", "success");
+  }
+
+  // ── Results Parser ──────────────────────────────────────────
+  function parseResults(text, filename = "out.txt") {
+    if (filename.endsWith(".csv")) {
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) { toast("CSV is empty", "error"); return; }
+      const headers = lines[0].split(/[;,]/).map(h => h.trim());
+      const rows = lines.slice(1).map(l => {
+        const cols = l.split(/[;,]/).map(c => c.trim());
+        const row = {};
+        headers.forEach((h, i) => row[h] = cols[i] || "");
+        return row;
+      }).filter(r => Object.values(r).some(v => v));
+      let finalRows = rows;
