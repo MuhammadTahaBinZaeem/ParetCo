@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<platform name="ARM_DualCore">
+  <processor model="ARM_CortexA7" number="2">
+    <mode name="default" cycle="1" mem="8192" dynPower="15" staticPower="2" area="6" monetary="12"/>
+    <mode name="low_power" cycle="2" mem="8192" dynPower="7" staticPower="1" area="6" monetary="12"/>
+  </processor>
+  <TDN_BUS name="sys_bus" topology="TDMA-bus" x-dimension="2" y-dimension="1" flitSize="32" cycles="2"/>
+</platform>
