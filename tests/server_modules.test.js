@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { serializeConfig, serializePlatform, serializeApplication, serializeWcets } = require('../server/serializers');
 const { validateStructuredLaunchJob } = require('../server/validation');
+const { PRESETS } = require('../server/presets');
 
 function validJob() {
   return {
@@ -52,6 +53,25 @@ test('config serializer emits actual line-oriented native config', () => {
   assert.ok(lines.includes('criteria = THROUGHPUT'));
   assert.ok(lines.includes('[presolver]'));
   assert.equal(cfg.includes('xmlinputs ='), false, 'source-line continuation regression returned');
+});
+
+test('config serializer emits exactly one valid log-level token', () => {
+  const cfg = serializeConfig(validJob(), ['sdfs/TestApp.xml'], false);
+  const logLines = cfg.split('\n').filter(line => /^log-level\s*=/.test(line));
+  assert.deepEqual(logLines, ['log-level = INFO']);
+  assert.equal(cfg.includes('INFO DEBUG'), false);
+});
+
+test('production demo preset is a complete stable native job', () => {
+  const demo = PRESETS.demo;
+  assert.ok(demo, 'PRESETS.demo must exist');
+  const validation = validateStructuredLaunchJob(demo);
+  assert.equal(validation.valid, true, validation.errors.join('\n'));
+  assert.equal(demo.dse.search, 'FIRST');
+  assert.equal(demo.dse.criteria, 'THROUGHPUT');
+  assert.equal(demo.dse.th_prop, 'SSE');
+  assert.equal(demo.output.logLevel, 'INFO');
+  assert.equal(demo.output.freq, 'ALL_SOL');
 });
 
 test('serializers preserve native model identifiers and SDF channel semantics', () => {
