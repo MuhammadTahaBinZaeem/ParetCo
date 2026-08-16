@@ -170,3 +170,61 @@ def main() -> int:
         elapsed = time.time() - started
         solutions = count_solutions(stdout + "\n" + stderr)
         expected_solutions = int(spec["expected_solutions"])
+        expected_exit = int(spec["expected_exit_code"])
+        timeout_allowed = bool(spec.get("timeout_allowed", False))
+
+        if timeout_allowed:
+            # Historical baseline timed out. A current timeout still matches; a clean completion
+            # also passes if it produces the same solution count, allowing performance improvements.
+            passed = timed_out or (return_code == 0 and solutions == expected_solutions)
+        else:
+            passed = (not timed_out and return_code == expected_exit and solutions == expected_solutions)
+
+        result = {
+            "run": run_id,
+            "pass": passed,
+            "timed_out": timed_out,
+            "return_code": return_code,
+            "solutions": solutions,
+            "expected_exit_code": expected_exit,
+            "expected_solutions": expected_solutions,
+            "timeout_allowed": timeout_allowed,
+            "seconds": round(elapsed, 3),
+            "fixture": str(cfg.relative_to(ROOT_DIR)),
+            "stderr_tail": stderr[-1000:],
+        }
+        results.append(result)
+
+        status = "PASS" if passed else "FAIL"
+        timeout_note = " timeout" if timed_out else ""
+        print(
+            f"Run {run_id:02d}/30: {status}{timeout_note} -> "
+            f"exit {return_code}, solutions {solutions} "
+            f"(expected exit {expected_exit}, solutions {expected_solutions}) [{elapsed:.2f}s]"
+        )
+
+    elapsed_total = time.time() - suite_start
+    passed_count = sum(1 for r in results if r.get("pass"))
+    report = {
+        "suite": expected_doc.get("suite"),
+        "engine": str(engine),
+        "execution_mode": mode,
+        "timeout_seconds": timeout_seconds,
+        "selected_runs": [r["run"] for r in results],
+        "passed": passed_count,
+        "total": len(results),
+        "pass_rate_percent": round((passed_count / len(results)) * 100, 2),
+        "elapsed_seconds": round(elapsed_total, 3),
+        "results": results,
+    }
+
+    if not args.no_report:
+        RESULT_JSON.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(f"\nReport: {RESULT_JSON.relative_to(ROOT_DIR)}")
+
+    print(f"Result: {passed_count}/{len(results)} PASS ({report['pass_rate_percent']:.1f}%) in {elapsed_total:.2f}s")
+    return 0 if passed_count == len(results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
