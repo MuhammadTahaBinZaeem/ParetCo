@@ -296,3 +296,153 @@
         return row;
       }).filter(r => Object.values(r).some(v => v));
       let finalRows = rows;
+      let finalSummaryCount = String(rows.length);
+      if (rows.length >= 200) {
+        finalRows = rows.slice(0, 200);
+        finalSummaryCount = "200 solutions found, more possible stopping due to limit.";
+      }
+      state.results = { headers, rows: finalRows, raw: text, summary: { solutions: finalSummaryCount, time: "< 1s" } };
+    } else {
+      // Robust parser for real Gecode engine and analytical solver output
+      function extractVal(block, keyRegex) {
+        const m = block.match(keyRegex);
+        if (!m) return "—";
+        let raw = m[1].trim();
+        return raw;
+      }
+
+      function parseNumeric(val) {
+        if (!val || val === "—") return 0;
+        // Handle interval format {[50..2147483646]} or [0..50]
+        const intervalMatch = val.match(/\[(\d+)(?:\.\.(\d+))?\]/);
+        if (intervalMatch) {
+          return parseInt(intervalMatch[1], 10);
+        }
+        const num = parseFloat(val.replace(/[^0-9.-]/g, ""));
+        return isNaN(num) ? 0 : num;
+      }
+
+      const solBlocks = text.split(/\*\*\*\s*Solution number:\s*/i);
+      const parsedRows = [];
+      const solMatch = text.match(/(\d+)\s+solutions?\s+found/i);
+      const solutionCount = solMatch ? solMatch[1] : String(Math.max(0, solBlocks.length - 1));
+      const timeMatch = text.match(/search ended after:\s*([^\r\n]+)/i);
+      const searchTime = timeMatch ? timeMatch[1].trim() : "< 1s";
+
+      for (let i = 1; i < solBlocks.length; i++) {
+        const block = solBlocks[i];
+        const numMatch = block.match(/^(\d+)/);
+        const solNum = numMatch ? numMatch[1] : String(i);
+
+        const procMapping = extractVal(block, /Proc:\s*\{(.*?)\}/i);
+        const periodRaw = extractVal(block, /Period:\s*(?:\{)?(.*?)(?:\})?(?:\r?\n|$)/i);
+        const utilRaw = extractVal(block, /Sys utilization:\s*(.*?)(?:\r?\n|$)/i);
+        const powerRaw = extractVal(block, /sys power(?:\s*\(only used parts\))?:\s*(.*?)(?:\r?\n|$)/i);
+        const areaRaw = extractVal(block, /sys area(?:\s*\(only used parts\))?:\s*(.*?)(?:\r?\n|$)/i);
+        const costRaw = extractVal(block, /sys cost(?:\s*\(only used parts\))?:\s*(.*?)(?:\r?\n|$)/i);
+        const orderRaw = extractVal(block, /Next:\s*(.*?)(?:\r?\n|$)/i);
+        const tdmaRaw = extractVal(block, /TDMA slots:\s*\{(.*?)\}/i);
+
+        parsedRows.push({
+          "Solution #": solNum,
+          "Period": periodRaw,
+          "Utilization (%)": utilRaw,
+          "Power (mW)": powerRaw,
+          "Area": areaRaw,
+          "Cost ($)": costRaw,
+          "PE Mapping": procMapping,
+          "Order": orderRaw,
+          "TDMA Slots": tdmaRaw,
+          // Numeric fields for chart & Pareto frontier calculation
+          _period: parseNumeric(periodRaw),
+          _power: parseNumeric(powerRaw),
+          _area: parseNumeric(areaRaw),
+          _cost: parseNumeric(costRaw),
+          _utilization: parseNumeric(utilRaw)
+        });
+      }
+
+      // Check active design constraints from UI
+      let activeMinPeriod = Infinity;
+      (state.constraints || []).forEach(c => {
+        const pVal = parseInt(c.period, 10);
+        if (!isNaN(pVal) && pVal > 0 && pVal < activeMinPeriod) {
+          activeMinPeriod = pVal;
+        }
+      });
+
+      const activeMaxPower = (state.sysConstraints?.maxPower && state.sysConstraints.maxPower !== "Unlimited")
+        ? parseFloat(state.sysConstraints.maxPower)
+        : Infinity;
+
+      // Filter rows that meet active constraints
+      const validRows = parsedRows.filter(r => {
+        if (activeMinPeriod < Infinity && r._period > activeMinPeriod) return false;
+        if (isFinite(activeMaxPower) && r._power > activeMaxPower) return false;
+        return true;
+      });
+
+      let finalRows = validRows;
+      let finalSummaryCount = validRows.length.toString();
+
+      if (validRows.length >= 200) {
+        finalRows = validRows.slice(0, 200);
+        finalSummaryCount = "200 solutions found, more possible stopping due to limit.";
+      } else if (validRows.length === 0) {
+        finalSummaryCount = "0 solutions found (all violated active constraints)";
+      }
+
+      if (finalRows.length > 0) {
+        state.results = {
+          headers: ["Solution #", "Period", "Utilization (%)", "Power (mW)", "Area", "Cost ($)", "PE Mapping", "Order"],
+          rows: finalRows,
+          raw: text,
+          summary: {
+            solutions: finalSummaryCount,
+            time: searchTime
+          }
+        };
+      } else {
+        state.results = {
+          headers: ["Raw Output"],
+          rows: [],
+          raw: text,
+          summary: {
+            solutions: "0 solutions found",
+            time: searchTime || "—"
+          }
+        };
+      }
+    }
+    renderResults();
+    toast(`Results loaded: ${state.results.summary?.solutions || 0} solution(s)`, "success");
+    // Trigger Pareto Frontier and Incremental DSE updates
+    if (window.ParetoFrontier) window.ParetoFrontier.refresh();
+    if (window.IncrementalDSE) window.IncrementalDSE.recordRun();
+    if (window.ArchStudio) window.ArchStudio.applyResultOverlay();
+  }
+
+  // ═══════════════════════ RENDERING ══════════════════════════
+  function updateKPIs() {
+    let totalProcs = 0;
+    state.platform.processors.forEach(p => totalProcs += p.count);
+    $("#kpi-processors").textContent = totalProcs;
+    $("#kpi-applications").textContent = state.applications.length;
+    let totalActors = 0;
+    state.applications.forEach(a => totalActors += a.actors.length);
+    $("#kpi-actors").textContent = totalActors;
+    $("#kpi-solutions").textContent = state.results?.summary?.solutions ?? "—";
+  }
+
+  // ── Platform ────────────────────────────────────────────────
+  function renderPlatform() {
+    const tbody = $("#platform-tbody");
+    const empty = $("#platform-empty");
+    tbody.innerHTML = "";
+
+    if (state.platform.processors.length === 0) {
+      empty.classList.remove("hidden");
+      tbody.closest("table").classList.add("hidden");
+    } else {
+      empty.classList.add("hidden");
+      tbody.closest("table").classList.remove("hidden");
