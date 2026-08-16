@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: paretoco
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PARETOCO_REQUIRE_NATIVE
+        value: "true"
+      - key: WINEDEBUG
+        value: "-all"
+      - key: WINEARCH
+        value: win64
+      - key: FEATHERLESS_API_KEY
+        sync: false
+      - key: FEATHERLESS_MODEL
+        value: Qwen/Qwen2.5-7B-Instruct
