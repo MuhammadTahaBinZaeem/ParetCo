@@ -54,13 +54,82 @@ function primaryObjective(goal) {
   const text = String(goal || '').toLowerCase();
   if (/power|energy|watt|thermal/.test(text)) return 'power';
   if (/area|silicon|footprint/.test(text)) return 'area';
-  if (/cost|price|budget|money/.test(text)) return 'cost';
-  if (/latency|period|throughput|performance|speed/.test(text)) return 'period';
+  if (/cost|price|budget|money|bom/.test(text)) return 'cost';
+  if (/latency|period|throughput|performance|speed|fps/.test(text)) return 'period';
   if (/core|processor|resource/.test(text)) return 'cores';
   return 'balanced';
 }
 
-function objectiveValue(objective, summary, platform) {
+function parseClockHz(text) {
+  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)\s*(ghz|mhz|khz|hz)\b/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const factor = unit === 'ghz' ? 1e9 : unit === 'mhz' ? 1e6 : unit === 'khz' ? 1e3 : 1;
+  return Number.isFinite(value) && value > 0 ? value * factor : null;
+}
+
+function parseNumberNear(text, keywordPattern, unitPattern = '') {
+  const re = new RegExp(`(?:${keywordPattern})[^\\d$]{0,30}\\$?\\s*(?:<=|<|below|under|max(?:imum)?|budget(?:\\s+of)?|at\\s+most)?\\s*\\$?\\s*(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})`, 'i');
+  const match = String(text || '').match(re);
+  return match ? { value: Number(match[1]), unit: String(match[2] || '').toLowerCase() } : null;
+}
+
+function deriveHardTargets(goal) {
+  const text = String(goal || '');
+  const targets = {};
+
+  const power = parseNumberNear(text, 'power|energy(?:\\s+budget)?', 'mw|w');
+  if (power && Number.isFinite(power.value) && power.value > 0) {
+    targets.power = Math.round(power.unit === 'w' ? power.value * 1000 : power.value);
+  }
+
+  const cost = parseNumberNear(text, 'cost|bom|budget|price', '\\$?');
+  if (cost && Number.isFinite(cost.value) && cost.value > 0) targets.cost = cost.value;
+
+  const area = parseNumberNear(text, 'area|silicon(?:\\s+area)?|footprint', '');
+  if (area && Number.isFinite(area.value) && area.value > 0) targets.area = area.value;
+
+  const period = String(text).match(/\bperiod\b[^\d]{0,30}(\d+(?:\.\d+)?)\s*cycles?\b/i);
+  if (period) targets.periodCycles = Math.round(Number(period[1]));
+
+  const latency = String(text).match(/\b(?:latency|deadline)\b[^\d]{0,30}(\d+(?:\.\d+)?)\s*cycles?\b/i);
+  if (latency) targets.latencyCycles = Math.round(Number(latency[1]));
+
+  const fps = String(text).match(/(?:>=|>|at\s+least)?\s*(\d+(?:\.\d+)?)\s*fps\b/i);
+  if (fps) {
+    const clockHz = parseClockHz(text);
+    if (!clockHz) {
+      targets.unsupported = `The goal specifies ${fps[1]} FPS, but the native solver uses period in processor cycles. Include a clock frequency (for example, 1 GHz) so FPS can be converted to a cycle-period bound.`;
+    } else {
+      targets.periodCycles = Math.floor(clockHz / Number(fps[1]));
+    }
+  }
+
+  return targets;
+}
+
+function applyHardTargets(job, targets) {
+  const next = deepClone(job);
+  next.sysConstraints = next.sysConstraints && typeof next.sysConstraints === 'object' ? next.sysConstraints : {};
+  if (Number(targets.power) > 0) next.sysConstraints.power = targets.power;
+  if (Number(targets.area) > 0) next.sysConstraints.area = targets.area;
+  if (Number(targets.cost) > 0) next.sysConstraints.cost = targets.cost;
+
+  if (Number(targets.periodCycles) > 0 || Number(targets.latencyCycles) > 0) {
+    next.constraints = Array.isArray(next.constraints) ? next.constraints : [];
+    if (next.constraints.length === 0 && next.applications?.[0]) {
+      next.constraints.push({ appName: next.applications[0].name || 'App', period: 0, latency: 0 });
+    }
+    if (next.constraints[0]) {
+      if (Number(targets.periodCycles) > 0) next.constraints[0].period = targets.periodCycles;
+      if (Number(targets.latencyCycles) > 0) next.constraints[0].latency = targets.latencyCycles;
+    }
+  }
+  return next;
+}
+
+function primaryMetric(objective, summary, platform) {
   if (objective === 'power') return summary.minPower;
   if (objective === 'area') return summary.minArea;
   if (objective === 'cost') return summary.minCost;
@@ -78,8 +147,8 @@ function scoreCandidate(objective, candidateSummary, candidatePlatform, baseline
   if (!candidateSummary.feasible) return -Infinity;
 
   if (objective !== 'balanced') {
-    const candidateValue = objectiveValue(objective, candidateSummary, candidatePlatform);
-    const baselineValue = objectiveValue(objective, baselineSummary, baselinePlatform);
+    const candidateValue = primaryMetric(objective, candidateSummary, candidatePlatform);
+    const baselineValue = primaryMetric(objective, baselineSummary, baselinePlatform);
     if (!Number.isFinite(candidateValue)) return -Infinity;
     if (Number.isFinite(baselineValue) && candidateValue >= baselineValue) return -Infinity;
     return -candidateValue;
@@ -102,7 +171,7 @@ function scoreCandidate(objective, candidateSummary, candidatePlatform, baseline
   return score;
 }
 
-async function proposeCandidates(goal, currentPlatform, baselineResults) {
+async function proposeCandidates(goal, currentPlatform, baselineResults, hardTargets) {
   const systemPrompt = `You are the ParetoCo architecture optimization planner. You propose architecture candidates; you NEVER claim they are feasible or improved until the native solver verifies them.
 Return ONLY JSON in this shape:
 {
@@ -116,14 +185,15 @@ Return ONLY JSON in this shape:
 }
 Rules:
 - Return 1 to 3 COMPLETE platform candidates.
-- Preserve processor model and mode names when changing them is not required, because WCET mappings reference those names.
+- Preserve processor model and mode names whenever possible because WCET mappings reference them.
 - Prefer small, defensible changes rather than arbitrary redesigns.
-- Respect explicit hard limits present in the current job.
+- The supplied hardTargets are enforced independently by the native solver; do not relax them.
 - Do not modify application, WCET, or constraint semantics.
 - Do not say a candidate passed DSE; the native solver will verify it.`;
 
   const result = await askFeatherlessJson(systemPrompt, JSON.stringify({
     goal,
+    hardTargets,
     currentPlatform,
     baselineResultTail: String(baselineResults || '').slice(-7000)
   }));
@@ -143,17 +213,20 @@ async function autoOptimizeAgent(messages, onLog = () => {}) {
   const baselineResults = String(context.baselineResults || '');
   const baselineSummary = summarizeNativeText(baselineResults);
   const objective = primaryObjective(goal);
+  const hardTargets = deriveHardTargets(goal);
+  if (hardTargets.unsupported) throw new Error(hardTargets.unsupported);
 
-  onLog(`[Architecture Agent] Objective: ${objective}. Generating bounded candidate architectures...`);
-  const candidates = await proposeCandidates(goal, job.platform, baselineResults);
+  onLog(`[Architecture Agent] Objective: ${objective}. Explicit targets will be enforced by native DSE.`);
+  const candidates = await proposeCandidates(goal, job.platform, baselineResults, hardTargets);
   if (candidates.length === 0) throw new Error('Featherless returned no valid architecture candidates.');
 
   const verified = [];
   for (let index = 0; index < candidates.length; index++) {
     const candidate = candidates[index];
     onLog(`[Architecture Agent] Native verification ${index + 1}/${candidates.length}...`);
-    const trialJob = deepClone(job);
+    let trialJob = deepClone(job);
     trialJob.platform = candidate.platform;
+    trialJob = applyHardTargets(trialJob, hardTargets);
 
     try {
       const verification = await runNativeDse(trialJob);
@@ -169,24 +242,20 @@ async function autoOptimizeAgent(messages, onLog = () => {}) {
       }
 
       onLog(`[Architecture Agent] Candidate ${index + 1} VERIFIED with ${verification.summary.solutionCount} native solution(s).`);
-      verified.push({
-        ...candidate,
-        score,
-        verification
-      });
+      verified.push({ ...candidate, score, verification });
     } catch (err) {
       onLog(`[Architecture Agent] Candidate ${index + 1} native run failed: ${err.message}`);
     }
   }
 
   if (verified.length === 0) {
-    throw new Error('No proposed architecture both passed the native solver and improved the requested objective. The current architecture was left unchanged.');
+    throw new Error('No proposed architecture both passed the native solver and improved the requested objective while satisfying the explicit targets. The current architecture was left unchanged.');
   }
 
   verified.sort((a, b) => b.score - a.score);
   const best = verified[0];
-  const baseValue = objectiveValue(objective, baselineSummary, job.platform);
-  const candidateValue = objectiveValue(objective, best.verification.summary, best.platform);
+  const baseValue = primaryMetric(objective, baselineSummary, job.platform);
+  const candidateValue = primaryMetric(objective, best.verification.summary, best.platform);
   const improvement = improvementPct(baseValue, candidateValue);
 
   onLog(`[Architecture Agent] Selected native-verified candidate (${best.verification.summary.solutionCount} solutions).`);
@@ -195,6 +264,7 @@ async function autoOptimizeAgent(messages, onLog = () => {}) {
     rationale: best.rationale,
     expectedTradeoffs: best.expectedTradeoffs,
     objective,
+    hardTargets,
     improvementPct: improvement,
     verification: {
       native: true,
@@ -206,4 +276,4 @@ async function autoOptimizeAgent(messages, onLog = () => {}) {
   };
 }
 
-module.exports = { autoOptimizeAgent };
+module.exports = { autoOptimizeAgent, deriveHardTargets };
