@@ -2,6 +2,12 @@
 
 const { sendJson, readJson, sendError } = require('./http_utils');
 
+function nativeContractError(message) {
+  const error = new Error(message);
+  error.code = 'NATIVE_UNAVAILABLE';
+  return error;
+}
+
 async function handleInsights(req, res) {
   try {
     const data = await readJson(req);
@@ -22,7 +28,7 @@ async function handleInsights(req, res) {
     const insights = await askFeatherless(systemPrompt, userPrompt);
     sendJson(res, 200, { insights });
   } catch (error) {
-    // Insights have a deterministic client fallback; keep the endpoint non-fatal.
+    // Insights are advisory and the UI has a deterministic data-only fallback.
     sendJson(res, 200, { error: error.message, fallback: true });
   }
 }
@@ -36,10 +42,29 @@ async function handleNlToDse(req, res) {
       : [{ role: 'user', content: String(prompt || '') }];
     const logs = [];
     const result = await convertNlToDseAgent(chatMessages, log => logs.push(log));
-    sendJson(res, 200, { ...result, logs, messages: chatMessages });
+
+    // Preserve the actual clarification turn so a follow-up answer has the
+    // same conversational context that produced the question.
+    const nextMessages = [...chatMessages];
+    if (result.question) nextMessages.push({ role: 'assistant', content: String(result.question) });
+
+    sendJson(res, 200, { ...result, logs, messages: nextMessages });
   } catch (error) {
     sendError(res, error);
   }
+}
+
+function currentJobFrom(data) {
+  return data.currentJob || {
+    platform: data.platform,
+    applications: data.applications,
+    wcets: data.wcets,
+    constraints: data.constraints,
+    sysConstraints: data.sysConstraints,
+    dse: data.dse,
+    presolver: data.presolver,
+    output: data.output
+  };
 }
 
 async function handleAutoOptimize(req, res) {
@@ -52,21 +77,19 @@ async function handleAutoOptimize(req, res) {
           role: 'user',
           content: JSON.stringify({
             goal: data.budgetPrompt || '',
-            currentJob: data.currentJob || {
-              platform: data.platform,
-              applications: data.applications,
-              wcets: data.wcets,
-              constraints: data.constraints,
-              sysConstraints: data.sysConstraints,
-              dse: data.dse,
-              presolver: data.presolver,
-              output: data.output
-            },
+            currentJob: currentJobFrom(data),
             baselineResults: data.resultsText || ''
           })
         }];
     const logs = [];
     const result = await autoOptimizeAgent(messages, log => logs.push(log));
+
+    // Defense in depth: the route itself refuses to publish an architecture
+    // unless the agent returned evidence from the native engine bridge.
+    if (!result?.verification?.native || !(Number(result.verification.solutionCount) > 0)) {
+      throw nativeContractError('Auto-Optimize refused to return an architecture because no successful native verification accompanied the proposal.');
+    }
+
     sendJson(res, 200, { ...result, logs, messages });
   } catch (error) {
     sendError(res, error);
@@ -77,26 +100,41 @@ async function handleUnsatDoctor(req, res) {
   try {
     const data = await readJson(req);
     const { analyzeUnsatAgent } = require('../ai_features/unsat_doctor');
+    const currentJob = data.currentJob || {
+      platform: data.platform,
+      applications: data.applications,
+      wcets: data.wcets,
+      constraints: data.constraints?.application || data.constraints,
+      sysConstraints: data.constraints?.system || data.sysConstraints,
+      dse: data.dse,
+      presolver: data.presolver,
+      output: data.output
+    };
     const messages = Array.isArray(data.messages) && data.messages.length
       ? data.messages
       : [{
           role: 'user',
           content: JSON.stringify({
-            currentJob: data.currentJob || {
-              platform: data.platform,
-              applications: data.applications,
-              wcets: data.wcets,
-              constraints: data.constraints?.application || data.constraints,
-              sysConstraints: data.constraints?.system || data.sysConstraints,
-              dse: data.dse,
-              presolver: data.presolver,
-              output: data.output
-            },
+            currentJob,
             baselineResults: data.baselineResults || '0 solutions found'
           })
         }];
     const logs = [];
     const result = await analyzeUnsatAgent(messages, log => logs.push(log));
+
+    if (!result?.alreadyFeasible) {
+      const options = Array.isArray(result?.options) ? result.options : [];
+      const verifiedOptions = options.filter(option =>
+        option?.verified === true &&
+        option?.verificationEngine === 'native' &&
+        Number(option?.verifiedSolutions) > 0
+      );
+      if (verifiedOptions.length !== options.length) {
+        console.warn(`[unsat-doctor] Dropped ${options.length - verifiedOptions.length} repair option(s) that lacked native verification evidence.`);
+      }
+      result.options = verifiedOptions;
+    }
+
     sendJson(res, 200, { ...result, logs, messages });
   } catch (error) {
     sendError(res, error);
