@@ -113,3 +113,60 @@ def main() -> int:
         probe_cmd, mode = build_command(engine, "config.cfg", args.wine)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"ParetoCo native regression suite: {len(run_specs)} run(s)")
+    print(f"Engine: {engine}")
+    print(f"Execution mode: {mode}")
+    print(f"Timeout: {timeout_seconds}s per run\n")
+
+    results: list[dict] = []
+    suite_start = time.time()
+
+    for spec in run_specs:
+        run_id = int(spec["run"])
+        cfg = (ROOT_DIR / spec["fixture"]).resolve()
+        if not cfg.is_file():
+            result = {
+                "run": run_id,
+                "pass": False,
+                "error": f"Missing fixture: {cfg}",
+            }
+            results.append(result)
+            print(f"Run {run_id:02d}/30: FAIL -> missing fixture")
+            continue
+
+        # Run from the fixture directory and pass only config.cfg. This keeps all relative
+        # SDF/platform paths valid for both native Windows and Wine execution.
+        command, _ = build_command(engine, cfg.name, args.wine)
+        started = time.time()
+        timed_out = False
+        stdout = ""
+        stderr = ""
+        return_code = -1
+
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(cfg.parent),
+                env=env,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=timeout_seconds,
+            )
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+            return_code = proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            stdout = (exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""))
+            stderr = (exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""))
+            return_code = 124
+        except Exception as exc:  # pragma: no cover - environment/launcher failures
+            stderr = f"{type(exc).__name__}: {exc}"
+            return_code = -1
+
+        elapsed = time.time() - started
+        solutions = count_solutions(stdout + "\n" + stderr)
+        expected_solutions = int(spec["expected_solutions"])
