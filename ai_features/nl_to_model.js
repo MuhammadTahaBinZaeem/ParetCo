@@ -152,26 +152,72 @@ function validateModel(model) {
   return model;
 }
 
+function explicitProcessorModels(text) {
+  const source = String(text || '');
+  const models = [];
+  const wordNumber = '(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)';
+  const re = new RegExp(`\\b${wordNumber}\\s+([A-Za-z][A-Za-z0-9_-]*)\\s+(?:cores?|processors?|pes?)\\b`, 'gi');
+  for (const match of source.matchAll(re)) {
+    const model = String(match[1] || '').trim();
+    if (model && !models.some(existing => existing.toLowerCase() === model.toLowerCase())) models.push(model);
+  }
+  return models;
+}
+
+function applyExplicitIdentityHints(model, text) {
+  if (!model || typeof model !== 'object') return model;
+  const explicitModels = explicitProcessorModels(text);
+  if (explicitModels.length !== 1) return model;
+  const explicitModel = explicitModels[0];
+
+  if (Array.isArray(model.platform?.processors)) {
+    for (const processor of model.platform.processors) {
+      if (!String(processor?.model || '').trim()) processor.model = explicitModel;
+    }
+  }
+
+  if (Array.isArray(model.wcets)) {
+    for (const wcet of model.wcets) {
+      if (!String(wcet?.procModel || wcet?.processor || '').trim()) {
+        wcet.procModel = explicitModel;
+        wcet.processor = explicitModel;
+      }
+      const proc = model.platform?.processors?.find(p => String(p.model).toLowerCase() === String(wcet.procModel || wcet.processor).toLowerCase());
+      if (!wcet.mode && proc?.modes?.length === 1) wcet.mode = proc.modes[0].name || 'default';
+    }
+  }
+  return model;
+}
+
+function clarificationForInvalidModel(error) {
+  const message = String(error?.message || 'the generated model was structurally incomplete');
+  return `I could not safely complete the DSE model because ${message}. Please give the missing processor/application identifiers or use a more explicit description; I will not invent them.`;
+}
+
 async function validatedAiModel(systemPrompt, messages, onLog) {
   const sourceTranscript = transcript(messages);
+  const sourceText = userText(messages);
   const first = await askFeatherlessJson(systemPrompt, sourceTranscript);
   if (first.question) return { question: String(first.question) };
 
+  const firstModel = applyExplicitIdentityHints(first.model || first, sourceText);
   try {
-    return { model: validateModel(first.model || first) };
+    return { model: validateModel(firstModel) };
   } catch (validationError) {
     onLog(`[NL-to-DSE] First draft failed structural validation: ${validationError.message}. Requesting one schema repair...`);
-    const repairPrompt = `${systemPrompt}\n\nA previous draft failed strict structural validation. Repair the draft without changing explicit user constraints. Return a complete model, not a patch. Do not invent a wall-clock-to-cycles conversion without a clock frequency.`;
+    const repairPrompt = `${systemPrompt}\n\nA previous draft failed strict structural validation. Repair the draft without changing explicit user constraints. Return a complete model, not a patch. Preserve every processor/model identifier explicitly stated by the user. Do not invent a wall-clock-to-cycles conversion without a clock frequency.`;
     const repaired = await askFeatherlessJson(repairPrompt, JSON.stringify({
-      originalRequest: userText(messages),
+      originalRequest: sourceText,
       validationError: validationError.message,
       invalidDraft: first
     }));
     if (repaired.question) return { question: String(repaired.question) };
+    const repairedModel = applyExplicitIdentityHints(repaired.model || repaired, sourceText);
     try {
-      return { model: validateModel(repaired.model || repaired) };
+      return { model: validateModel(repairedModel) };
     } catch (repairError) {
-      throw new Error(`Featherless returned an invalid DSE model after one repair attempt: ${repairError.message}`);
+      onLog(`[NL-to-DSE] Repaired draft is still incomplete: ${repairError.message}. Returning a clarification instead of accepting invalid JSON.`);
+      return { question: clarificationForInvalidModel(repairError) };
     }
   }
 }
@@ -179,10 +225,20 @@ async function validatedAiModel(systemPrompt, messages, onLog) {
 async function convertNlToDseAgent(messages, onLog = () => {}) {
   onLog('[NL-to-DSE] Building a structured DSE model...');
   const systemPrompt = `You convert a user's embedded-system description into a ParetoCo DSE JSON model.
-Return {"question":"one concise clarification question"} only when essential information is missing; otherwise return {"model":{...}}.
+Return {"question":"one concise clarification question"} only when essential information is missing; otherwise return a COMPLETE {"model":{...}} object.
+
+Required model shape:
+{
+  "platform":{"processors":[{"model":"ARM","count":2,"modes":[{"name":"default","cycle":1,"mem":4096,"dynPower":10,"staticPower":2,"area":5,"monetary":10}]}],"interconnects":[{"name":"bus0","topology":"TDMA-bus","xDim":2,"yDim":1,"flitSize":32,"slots":2}]},
+  "applications":[{"name":"App","actors":["a0","a1"],"channels":[{"name":"c0","src":"a0","dst":"a1","tokens":0}]}],
+  "wcets":[{"taskType":"a0","procModel":"ARM","mode":"default","wcet":10}],
+  "constraints":[{"appName":"App","period":100,"latency":0}],
+  "sysConstraints":{"power":-1,"utilization":-1,"area":-1,"cost":-1,"procsUsed":-1},
+  "dse":{"model":"SDF_PR_ONLINE","criteria":"THROUGHPUT","search":"FIRST","th_prop":"SSE"}
+}
+
 Canonical native units: period/latency in processor cycles; power in mW (12 W = 12000 mW); utilization in percent; memory in KB. If wall-clock time is supplied without a clock frequency, ask for the frequency instead of treating time as cycles.
-The model needs platform.processors+modes, platform.interconnects, applications with actors/channels, wcets, constraints, sysConstraints, and dse.
-Rules: WCET task types must match actor names/types; WCET processor+mode must exactly exist; channel endpoints must exist in the same app; use FIRST by default; preserve explicit limits and never silently relax them.`;
+Rules: preserve processor/model identifiers stated by the user; WCET task types must match actor names/types; WCET processor+mode must exactly exist; channel endpoints must exist in the same app; use FIRST by default; preserve explicit limits and never silently relax them.`;
 
   const generated = await validatedAiModel(systemPrompt, messages, onLog);
   if (generated.question) { onLog('[NL-to-DSE] Clarification required.'); return generated; }
