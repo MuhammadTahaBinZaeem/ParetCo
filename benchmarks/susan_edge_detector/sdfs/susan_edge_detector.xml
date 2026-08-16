@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<applicationGraph name="SusanDetector">
+  <sdf>
+    <actor name="get_image" type="get_image"><port name="out" type="out" rate="1"/></actor>
+    <actor name="susan_edges" type="susan_edges"><port name="in" type="in" rate="1"/><port name="out" type="out" rate="1"/></actor>
+    <actor name="susan_thin" type="susan_thin"><port name="in" type="in" rate="1"/><port name="out" type="out" rate="1"/></actor>
+    <actor name="draw_edges" type="draw_edges"><port name="in" type="in" rate="1"/></actor>
+    <channel name="ch1" srcActor="get_image" srcPort="out" dstActor="susan_edges" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch2" srcActor="susan_edges" srcPort="out" dstActor="susan_thin" dstPort="in" initialTokens="0" size="1"/>
+    <channel name="ch3" srcActor="susan_thin" srcPort="out" dstActor="draw_edges" dstPort="in" initialTokens="0" size="1"/>
+  </sdf>
+</applicationGraph>
