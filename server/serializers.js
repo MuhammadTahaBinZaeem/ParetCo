@@ -42,8 +42,6 @@ function serializePlatform(platform) {
     ? platform.interconnects
     : (platform?.interconnect ? [platform.interconnect] : []);
 
-  // The packaged model contains one system interconnect. Never manufacture one
-  // or silently drop extras: validation should make the architecture explicit.
   if (interconnects.length !== 1) {
     throw new Error(`Exactly one interconnect is required; received ${interconnects.length}.`);
   }
@@ -152,6 +150,7 @@ function serializeConfig(job, sdfFiles, hasConstraints) {
   const criteria = String(dse.criteria || 'THROUGHPUT').toUpperCase();
   const search = String(dse.search || 'FIRST').toUpperCase();
   const prop = String(dse.th_prop || dse.thProp || 'SSE').toUpperCase();
+  const logLevel = String(output.logLevel || 'INFO').toUpperCase();
   const lines = [];
 
   for (const file of sdfFiles) lines.push(`inputs = ${file}`);
@@ -162,7 +161,7 @@ function serializeConfig(job, sdfFiles, hasConstraints) {
     `output-file-type = ${String(output.type || 'ALL_OUT').toUpperCase()}`,
     `output-print-frequency = ${String(output.freq || 'ALL_SOL')}`,
     'print-metric = NONE',
-    `log-level = ${String(output.logLevel || 'INFO').toUpperCase()} DEBUG`,
+    `log-level = ${logLevel}`,
     '',
     '[dse]',
     `model = ${model}`,
