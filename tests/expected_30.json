@@ -1,0 +1,217 @@
+{
+  "suite": "ParetoCo native 30-run regression",
+  "source": "run_30_tests.zip baseline, normalized to portable paths",
+  "timeout_seconds": 30,
+  "runs": [
+    {
+      "run": 1,
+      "fixture": "tests/fixtures/generated/run_0/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 2,
+      "fixture": "tests/fixtures/generated/run_1/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 3,
+      "fixture": "tests/fixtures/generated/run_2/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 4,
+      "fixture": "tests/fixtures/generated/run_3/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 5,
+      "fixture": "tests/fixtures/generated/run_4/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 6,
+      "fixture": "tests/fixtures/generated/run_5/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 7,
+      "fixture": "tests/fixtures/generated/run_6/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 8,
+      "fixture": "tests/fixtures/generated/run_7/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 9,
+      "fixture": "tests/fixtures/generated/run_8/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 10,
+      "fixture": "tests/fixtures/generated/run_9/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 11,
+      "fixture": "tests/fixtures/generated/run_10/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 12,
+      "fixture": "tests/fixtures/generated/run_11/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 13,
+      "fixture": "tests/fixtures/generated/run_12/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 14,
+      "fixture": "tests/fixtures/generated/run_13/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 15,
+      "fixture": "tests/fixtures/generated/run_14/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 16,
+      "fixture": "tests/fixtures/generated/run_15/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 17,
+      "fixture": "tests/fixtures/generated/run_16/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 18,
+      "fixture": "tests/fixtures/generated/run_17/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 19,
+      "fixture": "tests/fixtures/generated/run_18/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 20,
+      "fixture": "tests/fixtures/generated/run_19/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 21,
+      "fixture": "tests/fixtures/generated/run_20/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 22,
+      "fixture": "tests/fixtures/generated/run_21/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 23,
+      "fixture": "tests/fixtures/generated/run_22/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 24,
+      "fixture": "tests/fixtures/generated/run_23/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 25,
+      "fixture": "tests/fixtures/generated/run_24/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 26,
+      "fixture": "tests/fixtures/generated/run_25/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 27,
+      "fixture": "tests/fixtures/generated/run_26/config.cfg",
+      "expected_solutions": 200,
+      "expected_exit_code": 0,
+      "timeout_allowed": false
+    },
+    {
+      "run": 28,
+      "fixture": "tests/fixtures/generated/run_27/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 29,
+      "fixture": "tests/fixtures/generated/run_28/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    },
+    {
+      "run": 30,
+      "fixture": "tests/fixtures/generated/run_29/config.cfg",
+      "expected_solutions": 0,
+      "expected_exit_code": 124,
+      "timeout_allowed": true
+    }
+  ]
+}
