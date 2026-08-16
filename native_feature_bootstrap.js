@@ -30,6 +30,20 @@ function replaceOnce(source, oldText, newText, label) {
   return source.replace(oldText, newText);
 }
 
+// round2 adds a launch-scope escapeXmlAttr helper before preflight inserts its
+// design-constraint block. A second `const escapeXmlAttr` in that same function
+// creates a temporal-dead-zone failure before the native process even starts.
+// Give the constraint helper its own name before the existing chain runs.
+patchFile('preflight.js', source => {
+  if (source.includes('escapeConstraintXmlAttr')) return source;
+  if (!source.includes('escapeXmlAttr')) {
+    console.warn('[native-feature-bootstrap] constraint XML escape helper: target not found');
+    return source;
+  }
+  console.log('[native-feature-bootstrap] isolate constraint XML escape helper name: applied');
+  return source.replace(/\bescapeXmlAttr\b/g, 'escapeConstraintXmlAttr');
+});
+
 patchFile('ui/pareto_frontier.js', source => {
   source = replaceOnce(source,
     '        period:      parseFloat(row["Period"]) || 0,',

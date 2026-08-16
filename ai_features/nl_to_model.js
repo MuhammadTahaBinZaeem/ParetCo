@@ -152,6 +152,30 @@ function validateModel(model) {
   return model;
 }
 
+async function validatedAiModel(systemPrompt, messages, onLog) {
+  const sourceTranscript = transcript(messages);
+  const first = await askFeatherlessJson(systemPrompt, sourceTranscript);
+  if (first.question) return { question: String(first.question) };
+
+  try {
+    return { model: validateModel(first.model || first) };
+  } catch (validationError) {
+    onLog(`[NL-to-DSE] First draft failed structural validation: ${validationError.message}. Requesting one schema repair...`);
+    const repairPrompt = `${systemPrompt}\n\nA previous draft failed strict structural validation. Repair the draft without changing explicit user constraints. Return a complete model, not a patch. Do not invent a wall-clock-to-cycles conversion without a clock frequency.`;
+    const repaired = await askFeatherlessJson(repairPrompt, JSON.stringify({
+      originalRequest: userText(messages),
+      validationError: validationError.message,
+      invalidDraft: first
+    }));
+    if (repaired.question) return { question: String(repaired.question) };
+    try {
+      return { model: validateModel(repaired.model || repaired) };
+    } catch (repairError) {
+      throw new Error(`Featherless returned an invalid DSE model after one repair attempt: ${repairError.message}`);
+    }
+  }
+}
+
 async function convertNlToDseAgent(messages, onLog = () => {}) {
   onLog('[NL-to-DSE] Building a structured DSE model...');
   const systemPrompt = `You convert a user's embedded-system description into a ParetoCo DSE JSON model.
@@ -160,10 +184,9 @@ Canonical native units: period/latency in processor cycles; power in mW (12 W = 
 The model needs platform.processors+modes, platform.interconnects, applications with actors/channels, wcets, constraints, sysConstraints, and dse.
 Rules: WCET task types must match actor names/types; WCET processor+mode must exactly exist; channel endpoints must exist in the same app; use FIRST by default; preserve explicit limits and never silently relax them.`;
 
-  const result = await askFeatherlessJson(systemPrompt, transcript(messages));
-  if (result.question) { onLog('[NL-to-DSE] Clarification required.'); return { question: String(result.question) }; }
-  const model = validateModel(result.model || result);
-  const normalized = normalizeExplicitUnits(model, messages);
+  const generated = await validatedAiModel(systemPrompt, messages, onLog);
+  if (generated.question) { onLog('[NL-to-DSE] Clarification required.'); return generated; }
+  const normalized = normalizeExplicitUnits(generated.model, messages);
   if (normalized.question) { onLog('[NL-to-DSE] Unit conversion requires clarification.'); return normalized; }
   onLog('[NL-to-DSE] Model generated, unit-normalized, and cross-reference validated.');
   return { model: normalized.model };
