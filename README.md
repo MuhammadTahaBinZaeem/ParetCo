@@ -181,3 +181,187 @@ ParetoCo tracks how architecture or workload edits affect previous exploration r
 - snooping/bus transaction accounting
 - invalidation and coherence-overhead metrics
 
+## 9. UNSAT Diagnosis and Repair Assistance
+
+`ui/unsat_engine.js` provides deterministic local diagnostics:
+
+- QuickXplain-style minimal-conflict extraction
+- feasibility checks
+- constraint slack quantification
+- period/power violation identification
+- repair synthesis such as period relaxation, processor scaling, or power-budget expansion
+
+The web UI also exposes a Featherless-assisted UNSAT Doctor endpoint for conversational repair guidance.
+
+## 10. Featherless AI Features
+
+The integrated AI layer is deliberately kept separate from the mathematical solver. It uses Featherless through an OpenAI-compatible API client and bounded tool-calling loops.
+
+Integrated endpoints/features:
+
+- **AI Insights** — summarizes active DSE results and trade-offs
+- **Natural Language → DSE** — converts a natural-language architecture request into structured platform/workload/WCET/constraint/DSE JSON
+- **Auto Optimize** — agent-guided architecture modification workflow
+- **UNSAT Doctor** — agent-guided repair suggestions for infeasible designs
+
+Set `FEATHERLESS_API_KEY` to enable these cloud AI features. The native DSE engine itself does not require this key.
+
+## 11. Project Import, Export, and Visualization
+
+The main dashboard also includes:
+
+- platform XML parsing/generation
+- SDF XML parsing and graph visualization
+- WCET XML parsing
+- design-constraint parsing/generation
+- DSE config parsing/preview
+- native result parsing
+- KPI summaries
+- results charts
+- local project persistence/autosave
+- full-project export
+- built-in demo presets
+
+---
+
+# Repository Layout
+
+```text
+ParetoCo/
+├── server.js                       # HTTP server + native solver bridge
+├── Dockerfile                      # Render/Linux image with Wine
+├── render.yaml                     # Render Blueprint
+├── package.json
+├── .env.example
+│
+├── paretoco-engine-release/        # Required packaged native engine
+│   ├── paretoco-engine.exe
+│   └── *.dll
+│
+├── ui/                             # Dashboard + analytical engines
+│   ├── index.html
+│   ├── app.js
+│   ├── architecture_studio.js
+│   ├── pareto_frontier.js
+│   ├── incremental_dse.js
+│   ├── analytical_engine.js
+│   ├── dse_engine.js
+│   ├── pareto_engine.js
+│   ├── arch_engine.js
+│   ├── unsat_engine.js
+│   ├── advanced_algorithms.js
+│   └── system_profiler.js
+│
+├── ai_features/                    # Integrated Featherless agents only
+│   ├── featherless.js
+│   ├── nl_to_model.js
+│   ├── auto_optimize.js
+│   └── unsat_doctor.js
+│
+├── benchmarks/                     # H.264, Sobel, Susan workloads
+│
+└── tests/
+    ├── run_30_tests.py             # Native .exe regression runner
+    ├── expected_30.json            # Portable expected outcomes
+    └── fixtures/generated/
+        ├── run_0/
+        ├── ...
+        └── run_29/
+```
+
+The repository intentionally does **not** include an unused Rust wrapper, stale native-source build instructions, duplicate release archives, historical failure logs, generated AI output, or the previous large repeated JS class blocks.
+
+---
+
+# Local Run
+
+## Windows
+
+Requirements:
+
+- Node.js 18+
+- the included `paretoco-engine-release/` directory
+- Python 3 only if you want to run the 30-case native regression suite
+
+Install the integrated AI dependencies:
+
+```bash
+npm ci --prefix ai_features
+```
+
+Optional AI configuration:
+
+```bash
+copy .env.example .env
+```
+
+Then set:
+
+```text
+FEATHERLESS_API_KEY=your_key_here
+```
+
+Start ParetoCo:
+
+```bash
+npm start
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Check the native bridge:
+
+```text
+http://localhost:8080/api/status
+```
+
+On Windows the status should report `native-windows`.
+
+## Linux
+
+Install Node.js 18+ and Wine. The server automatically detects `wine64` or `wine` and uses it to launch the packaged executable.
+
+You can force a Wine executable with:
+
+```bash
+PARETOCO_WINE=/usr/bin/wine npm start
+```
+
+For production-like behavior locally:
+
+```bash
+PARETOCO_REQUIRE_NATIVE=true npm start
+```
+
+---
+
+# Render Deployment
+
+ParetoCo should be deployed to Render as a **Docker Web Service**, not as Render's plain Node runtime, because the production solver artifact is a Windows x86-64 executable.
+
+The included `Dockerfile`:
+
+1. starts from a Debian-based Node.js image;
+2. installs Wine/Wine64;
+3. installs the Featherless client dependencies;
+4. copies the native `.exe` and DLLs;
+5. enables `PARETOCO_REQUIRE_NATIVE=true`;
+6. initializes a 64-bit Wine prefix;
+7. starts `server.js` on Render's web port.
+
+The included `render.yaml` is a Render Blueprint for this Docker deployment.
+
+### Deploy
+
+1. Push this cleaned repository to GitHub.
+2. In Render, create a Blueprint/Web Service from the repository.
+3. Render should detect `render.yaml` and build the included `Dockerfile`.
+4. Add `FEATHERLESS_API_KEY` as a secret environment variable if you want AI features.
+5. Deploy.
+6. Verify `/healthz` and `/api/status` after deployment.
+
+A healthy Render deployment should report a native engine similar to:
