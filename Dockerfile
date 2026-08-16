@@ -19,15 +19,14 @@ COPY ai_features/package.json ai_features/package-lock.json ./ai_features/
 RUN npm ci --omit=dev --prefix ./ai_features
 
 COPY package.json package-lock.json ./
-COPY server.js start.js ./
+COPY server.js start.js preflight.js ./
 COPY ui/ ./ui/
 COPY ai_features/ ./ai_features/
 COPY paretoco-engine-release/ ./paretoco-engine-release/
 COPY benchmarks/ ./benchmarks/
 
-# Keep one known-good native fixture in the production image. start.js runs it
-# asynchronously after boot so Render logs prove whether Wine can execute the
-# exact packaged solver independently of web-generated input files.
+# Keep one known-good native fixture in the production image. The bootstrap runs
+# live API smoke checks against the packaged solver after the service starts.
 COPY tests/fixtures/generated/run_0/ ./tests/fixtures/generated/run_0/
 
 ENV NODE_ENV=production \
@@ -42,5 +41,6 @@ ENV NODE_ENV=production \
 
 EXPOSE 10000
 
-# Initialize a writable 64-bit Wine prefix, then start the diagnostic bootstrap.
-CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node start.js"]
+# Initialize a writable 64-bit Wine prefix, apply app-layer compatibility
+# repairs, then start the diagnostic bootstrap. Native engine files are untouched.
+CMD ["sh", "-c", "mkdir -p \"$WINEPREFIX\"; wineboot -u >/dev/null 2>&1 || true; exec node preflight.js"]

@@ -104,9 +104,10 @@
     const xDim = Math.max(1, parseInt(ic.xDim ?? ic['x-dimension'], 10) || 1);
     const slots = Math.max(1, parseInt(ic.slots ?? ic.tdma_slots, 10) || 2);
     const flitSize = Math.max(1, parseInt(ic.flitSize, 10) || 32);
+    const icMode = ic.mode || {};
     xml += '  <interconnect>\n';
-    xml += `    <TDMA_bus name="${xmlEscape(ic.name || 'bus0')}" x-dimension="${xDim}" flitSize="${flitSize}" tdma_slots="${slots}" maxSlotsPerProc="${Math.max(1, parseInt(ic.maxSlotsPerProc, 10) || slots)}">\n`;
-    xml += '      <mode name="default" cycleLength="1" dynPower_NI="1" dynPower_bus="1" staticPower_NI="1" staticPower_bus="1" area_NI="1" area_bus="1" monetary_NI="1" monetary_bus="1"/>\n';
+    xml += `    <TDMA_bus name="${xmlEscape(ic.name || 'bus0')}" x-dimension="${xDim}" y-dimension="${Math.max(1, parseInt(ic.yDim ?? ic['y-dimension'], 10) || 1)}" flitSize="${flitSize}" tdma_slots="${slots}" maxSlotsPerProc="${Math.max(1, parseInt(ic.maxSlotsPerProc, 10) || slots)}">\n`;
+    xml += `      <mode name="${xmlEscape(icMode.name || 'default')}" cycleLength="${xmlNumber(icMode.cycleLength, 1)}" dynPower_NI="${xmlNumber(icMode.dynPower_NI, 1)}" dynPower_bus="${xmlNumber(icMode.dynPower_bus, 1)}" staticPower_NI="${xmlNumber(icMode.staticPower_NI, 1)}" staticPower_bus="${xmlNumber(icMode.staticPower_bus, 1)}" area_NI="${xmlNumber(icMode.area_NI, 1)}" area_bus="${xmlNumber(icMode.area_bus, 1)}" monetary_NI="${xmlNumber(icMode.monetary_NI, 1)}" monetary_bus="${xmlNumber(icMode.monetary_bus, 1)}"/>\n`;
     xml += '    </TDMA_bus>\n  </interconnect>\n</platform>\n';
     return xml;
   }
