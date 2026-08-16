@@ -132,8 +132,6 @@ function validateModel(model) {
       };
     });
 
-  // Guarantee every actor has at least one valid WCET row so the generated model
-  // is immediately runnable rather than merely renderable.
   for (const actorName of actorNames) {
     if (!model.wcets.some(wcet => wcet.taskType === actorName)) {
       model.wcets.push({ taskType: actorName, processor: defaultProcessor, procModel: defaultProcessor, mode: defaultMode, wcet: 10 });
@@ -166,8 +164,6 @@ function validateModel(model) {
     th_prop: thProp
   };
 
-  // Hosted demo/runtime stability: avoid unsupported or crash-prone values from a
-  // free-form model response. Users can still change these manually afterwards.
   if (!['FIRST', 'ALL', 'OPTIMIZE', 'OPTIMIZE_IT'].includes(model.dse.search)) model.dse.search = 'FIRST';
   if (!['POWER', 'THROUGHPUT', 'AREA', 'COST', 'NONE'].includes(model.dse.criteria)) model.dse.criteria = 'THROUGHPUT';
   if (!['SSE', 'MCR'].includes(model.dse.thProp)) model.dse.thProp = model.dse.th_prop = 'SSE';
@@ -212,8 +208,12 @@ Rules:
 
   const result = await askFeatherlessJson(systemPrompt, transcript(messages));
   if (result.question) {
+    const question = String(result.question);
+    // The browser sends this message history back on the next turn. Preserve the
+    // assistant's clarification question so the user's reply has its context.
+    if (Array.isArray(messages)) messages.push({ role: 'assistant', content: question });
     onLog('[NL-to-DSE] Clarification required.');
-    return { question: String(result.question) };
+    return { question };
   }
 
   const model = validateModel(result.model || result);
