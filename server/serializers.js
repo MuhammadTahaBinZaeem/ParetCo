@@ -42,6 +42,12 @@ function serializePlatform(platform) {
     ? platform.interconnects
     : (platform?.interconnect ? [platform.interconnect] : []);
 
+  // The packaged model contains one system interconnect. Never manufacture one
+  // or silently drop extras: validation should make the architecture explicit.
+  if (interconnects.length !== 1) {
+    throw new Error(`Exactly one interconnect is required; received ${interconnects.length}.`);
+  }
+
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<platform xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n';
   for (const processor of processors) {
     xml += `  <processor model="${escapeXml(processor.model)}" number="${positiveInt(processor.count, 1)}">\n`;
@@ -52,10 +58,7 @@ function serializePlatform(platform) {
   }
 
   const totalCores = processors.reduce((sum, p) => sum + positiveInt(p.count, 1), 0);
-  const ic = interconnects[0] || {
-    name: 'bus0', topology: 'TDMA-bus', xDim: Math.max(1, totalCores), yDim: 1,
-    flitSize: 32, slots: Math.max(2, totalCores), maxSlotsPerProc: Math.max(2, totalCores)
-  };
+  const ic = interconnects[0];
   const mode = ic.mode || {};
   const slots = positiveInt(ic.slots ?? ic.tdma_slots, Math.max(2, totalCores));
   xml += '  <interconnect>\n';
@@ -69,19 +72,7 @@ function serializeApplication(app) {
   const name = String(app?.name || 'App');
   const actors = (Array.isArray(app?.actors) ? app.actors : []).map(actorShape);
   const actorByName = new Map(actors.map(a => [a.name, a]));
-  let channels = Array.isArray(app?.channels) ? app.channels : [];
-
-  if (!channels.length && actors.length) {
-    channels = actors.map((actor, i) => ({
-      name: `ch${i + 1}`,
-      srcActor: actor.name,
-      srcPort: 'p_out',
-      dstActor: actors[(i + 1) % actors.length].name,
-      dstPort: 'p_in',
-      initialTokens: i === actors.length - 1 ? 1 : 0,
-      size: 1
-    }));
-  }
+  const channels = Array.isArray(app?.channels) ? app.channels : [];
 
   let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<sdf3 type="sdf" name="${escapeXml(name)}" xsi:noNamespaceSchemaLocation="http://www.es.ele.tue.nl/sdf3/xsd/sdf3-sdf.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n  <applicationGraph name="${escapeXml(name)}">\n    <sdf name="${escapeXml(name)}" type="${escapeXml(name)}">\n`;
   for (const actor of actors) {
