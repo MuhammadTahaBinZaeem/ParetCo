@@ -1,0 +1,10 @@
+{
+  "name": "paretoco-ai-features",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Featherless-powered AI agents integrated into the ParetoCo web application",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "openai": "^4.0.0"
+  }
+}
