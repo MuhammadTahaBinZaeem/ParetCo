@@ -210,6 +210,24 @@
     return lines.join('\n');
   }
 
+  function setEngineStatus(mode, label) {
+    const el = document.getElementById('engine-status');
+    if (!el) return;
+    el.innerHTML = `<span class="status-dot ${escapeHtml(mode)}"></span><span>${escapeHtml(label)}</span>`;
+  }
+
+  function writeLog(text, reset = false) {
+    const log = document.getElementById('log-output');
+    if (!log) return;
+    if (reset) log.textContent = '';
+    log.textContent += String(text || '');
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function openResultsPage() {
+    document.querySelector('.nav-item[data-page="results"]')?.click();
+  }
+
   const originalFetch = window.fetch.bind(window);
   window.fetch = async function paretocoFetch(input, init = {}) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -263,6 +281,89 @@
       clearTimeout(timer);
     }
   };
+
+  async function nativeLaunch() {
+    if (!Array.isArray(state.platform?.processors) || state.platform.processors.length === 0 || !Array.isArray(state.applications) || state.applications.length === 0) {
+      const err = new Error('No DSE model is loaded. Use Load Demo, import a model, or generate one with NL-to-DSE first.');
+      api.toast?.(err.message, 'error');
+      throw err;
+    }
+
+    const job = currentJob();
+    job.presolver = clone(state.presolver || {});
+    job.config = typeof api.generateConfig === 'function' ? api.generateConfig() : '';
+
+    const endpoint = (api.getEngineUrl?.() || '') + '/api/launch';
+    writeLog('═══════════════════════════════════════════════════\n', true);
+    writeLog(` ParetoCo Native DSE — ${new Date().toLocaleString()}\n`);
+    writeLog('═══════════════════════════════════════════════════\n\n');
+    writeLog(`[HTTP] Launching native DSE solver on ${endpoint} ...\n`);
+    setEngineStatus('running', 'Native engine running…');
+
+    let data = null;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(job)
+      });
+      const text = await response.text();
+      try { data = JSON.parse(text); } catch (_) { data = { error: text || `HTTP ${response.status}` }; }
+
+      if (!response.ok || data.success === false) {
+        const detail = [data.error, data.stderr, data.stdout].filter(Boolean).join('\n');
+        throw new Error(detail || `Native DSE request failed with HTTP ${response.status}.`);
+      }
+
+      const nativeOutput = data.outTxt || data.log || data.outCsv || '';
+      if (!nativeOutput) throw new Error('Native engine returned no result output.');
+
+      writeLog(`\n${data.log || data.outTxt || 'Native DSE execution completed.'}\n`);
+      setEngineStatus('done', 'Native engine finished');
+
+      if (data.outTxt && typeof api.loadResults === 'function') api.loadResults(data.outTxt, 'out.txt');
+      else if (data.outCsv && typeof api.loadResults === 'function') api.loadResults(data.outCsv, 'out.csv');
+
+      openResultsPage();
+      api.toast?.('Native DSE exploration complete.', 'success');
+      return data;
+    } catch (err) {
+      const message = err?.message || String(err);
+      writeLog(`\n[ERROR] Native DSE failed:\n${message}\n`);
+      setEngineStatus('error', 'Native engine failed');
+      api.toast?.('Native DSE failed. See Engine Output for the real error.', 'error');
+      throw err;
+    }
+  }
+
+  function installNativeOnlyLaunch() {
+    const oldButton = document.getElementById('btn-launch');
+    if (!oldButton || oldButton.dataset.nativeOnly === 'true') {
+      api.launchEngine = nativeLaunch;
+      return;
+    }
+
+    const button = oldButton.cloneNode(true);
+    button.dataset.nativeOnly = 'true';
+    oldButton.replaceWith(button);
+    api.launchEngine = nativeLaunch;
+
+    button.addEventListener('pointerdown', syncSystemConstraintsFromForm, { capture: true });
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      const oldText = button.textContent;
+      button.textContent = 'Running native DSE...';
+      try {
+        await nativeLaunch();
+      } catch (_) {
+        // nativeLaunch has already surfaced the real error to the UI.
+      } finally {
+        button.disabled = false;
+        button.textContent = oldText || '▶ Launch DSE';
+      }
+    });
+  }
 
   function applyVerifiedPatch(patch) {
     for (const op of Array.isArray(patch) ? patch : []) {
@@ -364,7 +465,7 @@
               applyVerifiedPatch(option.patch);
               optionsEl.innerHTML = '';
               api.toast?.('Verified repair applied. Re-running native DSE...', 'success');
-              await api.launchEngine?.();
+              await nativeLaunch();
             } catch (err) {
               api.toast?.(`Repair apply failed: ${err.message}`, 'error');
             } finally {
@@ -441,10 +542,9 @@
   if (utilizationLabel) utilizationLabel.textContent = 'Min Utilization (%)';
   if (procsLabel) procsLabel.textContent = 'Active Processors (exact)';
 
-  document.getElementById('btn-launch')?.addEventListener('pointerdown', syncSystemConstraintsFromForm, { capture: true });
-
+  installNativeOnlyLaunch();
   installVerifiedUnsatDoctor();
   installSafeInsights();
 
-  console.info('[ParetoCo reliability] Native constraint sync, verified AI repairs, bounded AI requests, and safe result analysis enabled.');
+  console.info('[ParetoCo reliability] Native-only launch, constraint sync, verified AI repairs, bounded AI requests, and safe result analysis enabled.');
 })();
