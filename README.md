@@ -59,3 +59,64 @@ The packaged `paretoco-engine.exe` provides the native optimization path used by
 Capabilities represented in the packaged engine include:
 
 - Gecode-backed constraint search and branch-and-bound optimization
+- Synchronous Dataflow (SDF) workload parsing
+- heterogeneous processing-element mapping
+- processor assignment and scheduling constraints
+- TDMA/interconnect allocation constraints
+- throughput constraints
+- power, cost, memory, and mapping constraints
+- configurable DSE objectives/search strategies
+- MCR and SSE throughput-propagation modes
+- presolver support
+- solution enumeration and result-file generation
+
+The required Windows runtime libraries are kept together under `paretoco-engine-release/` so both direct Windows execution and Wine execution can resolve the native dependencies.
+
+## 2. Interactive Architecture Studio
+
+The browser-based Architecture Studio supports visual platform/workload construction and manipulation:
+
+- processor and architecture-node creation
+- workload/application node creation
+- interactive edges and ports
+- drag/drop editing
+- zooming, panning, selection, and property inspection
+- automatic layout
+- model-to-canvas and canvas-to-model synchronization
+- result overlays on the modeled architecture
+- separate platform and workload views
+
+## 3. Pareto and Multi-Objective Analysis
+
+`ui/pareto_engine.js` and `ui/pareto_frontier.js` provide:
+
+- Pareto dominance testing
+- Deb-style fast non-dominated sorting
+- crowding-distance calculation
+- hard solution capping for interactive analysis
+- 2D hypervolume calculation
+- knee-point scoring/detection
+- normalized k-means clustering of solutions
+- interactive Pareto scatter visualization
+- constraint filtering
+- solution inspection and dominance explanations
+- sensitivity analysis
+- parallel-coordinate visualization
+
+## 4. Continuous / Incremental DSE
+
+ParetoCo tracks how architecture or workload edits affect previous exploration results:
+
+- semantic platform differencing
+- workload differencing
+- constraint differencing
+- dependency/invalidation graphs
+- impact classification
+- warm-start seed synthesis from compatible previous mappings
+- exploration branches and run history
+- browser-side session persistence
+- model fingerprints
+- run timelines and delta visualization
+- LRU-style session retention
+
+## 5. SDF and Throughput Analytics
