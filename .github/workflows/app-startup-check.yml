@@ -1,0 +1,51 @@
+name: App startup check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            echo "checking $file"
+            node --check "$file"
+          done < <(find . -type f -name '*.js' -not -path './ai_features/node_modules/*' -print0)
+
+      - name: Start full bootstrap without native requirement
+        shell: bash
+        env:
+          PORT: '18080'
+          HOST: '127.0.0.1'
+          PARETOCO_REQUIRE_NATIVE: 'false'
+          PARETOCO_NATIVE_TIMEOUT_MS: '10000'
+        run: |
+          set -euo pipefail
+          node native_feature_bootstrap.js > /tmp/paretoco-startup.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat /tmp/paretoco-startup.log || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/api/health > /tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'ParetoCo process exited before becoming healthy.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo 'ParetoCo did not become healthy within 30 seconds.' >&2
+          exit 1
