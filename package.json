@@ -1,0 +1,27 @@
+{
+  "name": "paretoco",
+  "version": "2.1.0",
+  "description": "ParetoCo native/analytical design-space exploration, architecture analysis, and multi-objective optimization platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "python tests/run_30_tests.py",
+    "test:smoke": "python tests/run_30_tests.py 1,2,3"
+  },
+  "keywords": [
+    "design-space-exploration",
+    "pareto-optimization",
+    "computational-research",
+    "embedded-systems",
+    "mpsoC",
+    "synchronous-dataflow",
+    "gecode",
+    "wine"
+  ],
+  "author": "ParetoCo Contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
