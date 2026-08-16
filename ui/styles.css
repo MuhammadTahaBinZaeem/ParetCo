@@ -882,3 +882,130 @@ pre {
   z-index: 1000;
 }
 
+.toast {
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toast.success {
+  border-left: 4px solid #52B788;
+}
+
+.toast.error {
+  border-left: 4px solid var(--danger);
+}
+
+.toast.info {
+  border-left: 4px solid var(--nav-active-bg);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── Responsive Grid ────────────────────────────────────────── */
+@media (max-width: 1024px) {
+
+  .dashboard-grid,
+  .two-col,
+  .pareto-layout,
+  .dse-layout,
+  .studio-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+}
+
+/* ── Pareto Tooltip (Floating, Non-Interactive) ────────────── */
+.pareto-tooltip {
+  position: fixed !important;
+  z-index: 99999 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  font-family: inherit;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  max-width: 280px;
+  display: none;
+}
+
+.pareto-tooltip .tooltip-title {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pareto-tooltip .tooltip-badge {
+  background-color: var(--accent-actors);
+  color: #1b4332;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.pareto-tooltip .tooltip-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+}
+
+.pareto-tooltip .tooltip-dim {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pareto-tooltip .tooltip-dim-label {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.pareto-tooltip .tooltip-dim-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+
+.pareto-tooltip .tooltip-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 4px;
+  margin-top: 4px;
+}
