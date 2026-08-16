@@ -8,6 +8,8 @@
   const api = window.paretoco;
   if (!api?.state) return;
   const state = api.state;
+  const HOST_NATIVE_LIMIT_MS = 60_000;
+  const SAFE_INTERNAL_TIMEOUT_MS = 50_000;
 
   const allowed = {
     model: new Set(['SDF_PR_ONLINE', 'SDF']),
@@ -59,11 +61,8 @@
 
     if (!allowed.outType.has(String(state.output?.type || ''))) state.output.type = 'ALL_OUT';
     if (!allowed.outFreq.has(String(state.output?.freq || ''))) state.output.freq = 'ALL_SOL';
-    state.output.metric = 'NONE'; // native model emits a fixed metrics bundle; selector was misleading
+    state.output.metric = 'NONE';
     if (!allowed.logLevel.has(String(state.output?.logLevel || ''))) state.output.logLevel = 'INFO';
-
-    // FIRST + LAST is unsafe in this engine's output loop because LAST expects a
-    // retained previous solution that FIRST intentionally does not keep.
     if (state.dse.search === 'FIRST' && state.output.freq === 'LAST') state.output.freq = 'ALL_SOL';
   }
 
@@ -130,21 +129,25 @@
       const input = document.getElementById(id);
       const label = document.querySelector(`label[for="${id}"]`);
       if (label && !label.textContent.includes('(ms)')) label.textContent += ' (ms)';
-      if (input) input.min = '0';
+      if (input) {
+        input.min = '0';
+        input.max = String(SAFE_INTERNAL_TIMEOUT_MS);
+      }
     }
     for (const id of ['dse-threads', 'dse-luby', 'dse-nogood']) {
       const input = document.getElementById(id);
       if (input) input.min = '0';
     }
 
-    const configCard = document.querySelector('#page-explorer .card:nth-of-type(3) .card-body');
-    if (configCard && !document.getElementById('native-config-note')) {
-      const note = document.createElement('p');
+    const explorer = document.getElementById('page-explorer');
+    if (explorer && !document.getElementById('native-config-note')) {
+      const note = document.createElement('div');
       note.id = 'native-config-note';
-      note.className = 'muted-text';
-      note.style.marginTop = '12px';
-      note.textContent = 'These controls are restricted to options supported by the packaged ParetoCo engine. Timeout values are milliseconds.';
-      configCard.appendChild(note);
+      note.className = 'card';
+      note.style.marginBottom = '16px';
+      note.innerHTML = '<div class="card-body"><strong>Native configuration:</strong> This UI now exposes only options accepted by the packaged engine. Timeout fields are milliseconds. The hosted bridge has a 60 s hard safety cap, so explicit native timeouts must be ≤ 50 s.</div>';
+      const configCard = explorer.querySelector('.card:nth-of-type(3)');
+      if (configCard?.parentNode) configCard.parentNode.insertBefore(note, configCard);
     }
   }
 
@@ -207,6 +210,12 @@
     ]) {
       if (!Number.isInteger(number) || number < 0) errors.push(`${label} must be a non-negative integer.`);
     }
+    for (const [label, number] of [
+      ['Timeout 1', state.dse.timeout1], ['Timeout 2', state.dse.timeout2],
+      ['Presolver Timeout 1', state.presolver.timeout1], ['Presolver Timeout 2', state.presolver.timeout2]
+    ]) {
+      if (number > SAFE_INTERNAL_TIMEOUT_MS) errors.push(`${label} exceeds the hosted ${HOST_NATIVE_LIMIT_MS / 1000}s native safety window. Use 0 or ≤ ${SAFE_INTERNAL_TIMEOUT_MS} ms.`);
+    }
 
     return { valid: errors.length === 0, errors, warnings };
   }
@@ -220,18 +229,37 @@
     }
   });
 
+  function reportNativeErrors(result) {
+    const log = document.getElementById('log-output');
+    if (log) log.textContent = `[NATIVE CONFIG VALIDATION]\n${result.errors.map((error, index) => `${index + 1}. ${error}`).join('\n')}\n`;
+    api.toast?.(`Fix ${result.errors.length} native configuration issue(s) before launch.`, 'error');
+  }
+
   document.getElementById('btn-launch')?.addEventListener('click', event => {
     const result = validateNativeControls();
     if (!result.valid) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      const log = document.getElementById('log-output');
-      if (log) log.textContent = `[NATIVE CONFIG VALIDATION]\n${result.errors.map((error, index) => `${index + 1}. ${error}`).join('\n')}\n`;
-      api.toast?.(`Fix ${result.errors.length} native configuration issue(s) before launch.`, 'error');
+      reportNativeErrors(result);
       return;
     }
     if (result.warnings.length) api.toast?.(result.warnings[0], 'info');
   }, { capture: true });
+
+  // Round 4 already guards model-integrity checks on programmatic native reruns.
+  // Wrap its public launch hook once more so AI-triggered runs cannot bypass
+  // native config combination validation.
+  const previousLaunch = typeof api.launchEngine === 'function' ? api.launchEngine.bind(api) : null;
+  if (previousLaunch) {
+    api.launchEngine = async (...args) => {
+      const result = validateNativeControls();
+      if (!result.valid) {
+        reportNativeErrors(result);
+        return false;
+      }
+      return previousLaunch(...args);
+    };
+  }
 
   const previousValidate = api.validateExperiment;
   if (typeof previousValidate === 'function') {
