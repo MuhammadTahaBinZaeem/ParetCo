@@ -595,3 +595,152 @@
       tbody.closest("table")?.classList.remove("hidden");
       state.wcets.forEach((w, idx) => {
         const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="text" class="table-input" value="${w.taskType}" oninput="paretoco.updateWcetTask(${idx}, this.value)" onchange="paretoco.updateWcetTask(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateWcetTask(${idx}, this.value); this.blur();}" title="Edit Task Type"></td>
+          <td><input type="text" class="table-input" value="${w.processor || w.procModel || ''}" oninput="paretoco.updateWcetProc(${idx}, this.value)" onchange="paretoco.updateWcetProc(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateWcetProc(${idx}, this.value); this.blur();}" title="Edit Target Processor"></td>
+          <td><input type="text" class="table-input" value="${w.mode}" oninput="paretoco.updateWcetMode(${idx}, this.value)" onchange="paretoco.updateWcetMode(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateWcetMode(${idx}, this.value); this.blur();}" title="Edit Mode"></td>
+          <td><input type="number" class="table-input" value="${w.wcet}" oninput="paretoco.updateWcetTime(${idx}, this.value)" onchange="paretoco.updateWcetTime(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateWcetTime(${idx}, this.value); this.blur();}" title="Edit WCET (cycles)"></td>
+          <td><button class="btn btn-danger btn-xs" onclick="paretoco.removeWcet(${idx})" title="Delete WCET Entry">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  // ── Constraints ─────────────────────────────────────────────
+  function renderConstraints() {
+    const tbody = $("#constraints-tbody");
+    const empty = $("#constraints-empty");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    if (state.constraints.length === 0) {
+      if (empty) empty.classList.remove("hidden");
+      tbody.closest("table")?.classList.add("hidden");
+    } else {
+      if (empty) empty.classList.add("hidden");
+      tbody.closest("table")?.classList.remove("hidden");
+      state.constraints.forEach((c, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="text" class="table-input" value="${c.appName}" oninput="paretoco.updateConstraintApp(${idx}, this.value)" onchange="paretoco.updateConstraintApp(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateConstraintApp(${idx}, this.value); this.blur();}" title="Edit Application Name"></td>
+          <td><input type="number" class="table-input" value="${c.period}" oninput="paretoco.updateConstraintPeriod(${idx}, this.value)" onchange="paretoco.updateConstraintPeriod(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateConstraintPeriod(${idx}, this.value); this.blur();}" title="Edit Period Bound"></td>
+          <td><input type="number" class="table-input" value="${c.latency}" oninput="paretoco.updateConstraintLatency(${idx}, this.value)" onchange="paretoco.updateConstraintLatency(${idx}, this.value)" onkeydown="if(event.key==='Enter'){paretoco.updateConstraintLatency(${idx}, this.value); this.blur();}" title="Edit Latency Bound"></td>
+          <td><button class="btn btn-danger btn-xs" onclick="paretoco.removeConstraint(${idx})" title="Delete Constraint">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  // ── Results ─────────────────────────────────────────────────
+  function renderResults() {
+    const empty = $("#results-empty");
+    const content = $("#results-content");
+    const unsatContainer = $("#unsat-doctor-container");
+    const resultsChart = $("#results-chart");
+    const resultsTable = $("#results-table");
+
+    if (!state.results) {
+      if (empty) empty.classList.remove("hidden");
+      if (content) content.classList.add("hidden");
+      return;
+    }
+
+    if (empty) empty.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+
+    const solCountStr = String(state.results.summary?.solutions || "").trim();
+    const isUnsat = !state.results.rows ||
+      state.results.rows.length === 0 ||
+      solCountStr === "0" ||
+      solCountStr.startsWith("0 solutions");
+
+    if (isUnsat) {
+      if (unsatContainer) unsatContainer.classList.remove("hidden");
+      if (resultsChart) resultsChart.classList.add("hidden");
+      if (resultsTable) resultsTable.classList.add("hidden");
+    } else {
+      if (unsatContainer) unsatContainer.classList.add("hidden");
+      if (resultsChart) resultsChart.classList.remove("hidden");
+      if (resultsTable) resultsTable.classList.remove("hidden");
+    }
+
+    // Summary
+    const sum = $("#results-summary");
+    if (sum && state.results.summary) {
+      sum.innerHTML = `
+        <div class="stat"><span class="stat-label">Solutions</span><span class="stat-value">${state.results.summary.solutions}</span></div>
+        <div class="stat"><span class="stat-label">Search Time</span><span class="stat-value">${state.results.summary.time}</span></div>
+        <div class="stat"><span class="stat-label">Rows</span><span class="stat-value">${isUnsat ? 0 : state.results.rows.length}</span></div>
+      `;
+    }
+
+    // Table
+    const thead = $("#results-thead");
+    const tbody = $("#results-tbody");
+    if (thead && tbody && !isUnsat) {
+      thead.innerHTML = "<tr>" + state.results.headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+      tbody.innerHTML = "";
+      state.results.rows.slice(0, 100).forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = state.results.headers.map(h => `<td>${row[h] || ""}</td>`).join("");
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (!isUnsat) {
+      drawResultsChart();
+    }
+    updateKPIs();
+  }
+
+  function drawResultsChart() {
+    const canvas = $("#results-chart");
+    const ctx = canvas.getContext("2d");
+    const canvasWidth = canvas.offsetWidth || 800;
+    canvas.width = canvasWidth * 2;
+    canvas.height = 600;
+    ctx.scale(2, 2);
+    const w = canvasWidth;
+    const h = 300;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+
+    if (!state.results || !state.results.rows.length) return;
+
+    // Find numeric columns
+    const numCols = state.results.headers.filter(hdr => {
+      return state.results.rows.some(r => !isNaN(parseFloat(r[hdr])) && r[hdr] !== "");
+    });
+    if (numCols.length === 0) {
+      ctx.fillStyle = "#9095a4";
+      ctx.font = "13px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No numeric data to chart", w / 2, h / 2);
+      return;
+    }
+
+    const col = numCols[0];
+    const values = state.results.rows.map(r => parseFloat(r[col]) || 0);
+    const max = Math.max(...values, 1);
+    const barW = Math.max(6, (w - 80) / values.length - 4);
+    const chartH = h - 60;
+
+    ctx.fillStyle = "#5a5d6b";
+    ctx.font = "500 12px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(col, w / 2, h - 8);
+
+    values.forEach((v, i) => {
+      const bh = (v / max) * chartH;
+      const x = 40 + i * ((w - 80) / values.length);
+      ctx.fillStyle = "#c9513e";
+      ctx.fillRect(x, 25 + chartH - bh, barW, bh);
+    });
+  }
+
+  // ═══════════════════════ SDF GRAPH VISUALIZER ════════════════
+  function populateAppSelector() {
