@@ -42,6 +42,13 @@ patchTextFile('ui/index.html', source => replaceOnce(
 patchTextFile('ui/app.js', source => {
   source = replaceOnce(
     source,
+    '      model: "SDF_PR_ONLINE", search: "OPTIMIZE_IT", criteria: "POWER",',
+    '      model: "SDF_PR_ONLINE", search: "FIRST", criteria: "POWER",',
+    'use stable FIRST search as the fresh-session default'
+  );
+
+  source = replaceOnce(
+    source,
     '    const basePeriod = Math.max(20, Math.ceil(totalWorkload / totalCores));\n\n    // Check user design constraints',
     '    const basePeriod = Math.max(20, Math.ceil(totalWorkload / totalCores));\n    const basePower = totalCores * 10 + 2;\n\n    // Check user design constraints',
     'define client-side fallback basePower before constraint checks'
@@ -56,9 +63,9 @@ patchTextFile('ui/app.js', source => {
 
   source = replaceOnce(
     source,
-    '      const activeMaxPower = (state.sysConstraints?.maxPower && state.sysConstraints.maxPower !== "Unlimited")\n        ? parseFloat(state.sysConstraints.maxPower)\n        : Infinity;',
-    '      const activeMaxPower = (Number(state.sysConstraints?.power) > 0)\n        ? Number(state.sysConstraints.power)\n        : ((state.sysConstraints?.maxPower && state.sysConstraints.maxPower !== "Unlimited") ? parseFloat(state.sysConstraints.maxPower) : Infinity);',
-    'result parser reads canonical power constraint'
+    '      const activeMaxPower = (state.sysConstraints?.maxPower && state.sysConstraints.maxPower !== "Unlimited")\n        ? parseFloat(state.sysConstraints.maxPower)\n        : Infinity;\n\n      // Filter rows that meet active constraints\n      const validRows = parsedRows.filter(r => {\n        if (activeMinPeriod < Infinity && r._period > activeMinPeriod) return false;\n        if (isFinite(activeMaxPower) && r._power > activeMaxPower) return false;\n        return true;\n      });',
+    '      const activeMaxPower = (Number(state.sysConstraints?.power) > 0)\n        ? Number(state.sysConstraints.power)\n        : ((state.sysConstraints?.maxPower && state.sysConstraints.maxPower !== "Unlimited") ? parseFloat(state.sysConstraints.maxPower) : Infinity);\n      const activeMaxArea = Number(state.sysConstraints?.area) > 0 ? Number(state.sysConstraints.area) : Infinity;\n      const activeMaxCost = Number(state.sysConstraints?.cost) > 0 ? Number(state.sysConstraints.cost) : Infinity;\n      const activeMinUtilization = Number(state.sysConstraints?.utilization) > 0 ? Number(state.sysConstraints.utilization) : -Infinity;\n      const activeExactProcs = Number(state.sysConstraints?.procsUsed) > 0 ? Math.round(Number(state.sysConstraints.procsUsed)) : null;\n\n      const intervalUpper = (value, fallback) => {\n        const match = String(value || "").match(/\\[\\s*(-?\\d+(?:\\.\\d+)?)\\s*\\.\\.\\s*(-?\\d+(?:\\.\\d+)?)\\s*\\]/);\n        return match ? Number(match[2]) : fallback;\n      };\n\n      // Defense-in-depth filtering: never display a row that contradicts the\n      // active UI constraints, even if an imported/native result is stale.\n      const validRows = parsedRows.filter(r => {\n        if (activeMinPeriod < Infinity && r._period > activeMinPeriod) return false;\n        if (isFinite(activeMaxPower) && intervalUpper(r["Power (mW)"], r._power) > activeMaxPower) return false;\n        if (isFinite(activeMaxArea) && intervalUpper(r["Area"], r._area) > activeMaxArea) return false;\n        if (isFinite(activeMaxCost) && intervalUpper(r["Cost ($)"], r._cost) > activeMaxCost) return false;\n        if (activeMinUtilization > -Infinity && r._utilization > 0 && r._utilization < activeMinUtilization) return false;\n        if (activeExactProcs !== null) {\n          const mappings = String(r["PE Mapping"] || "").split(/[,\\s]+/).map(Number).filter(Number.isFinite);\n          if (mappings.length > 0 && new Set(mappings).size !== activeExactProcs) return false;\n        }\n        return true;\n      });',
+    'verify all supported system constraints in displayed results'
   );
 
   source = replaceOnce(
@@ -73,6 +80,13 @@ patchTextFile('ui/app.js', source => {
     '    state.dse.criteria = "THROUGHPUT";\n    state.dse.search = "FIRST";\n    state.dse.th_prop = "SSE";\n\n    renderPlatform();',
     '    state.dse.criteria = "THROUGHPUT";\n    state.dse.search = "FIRST";\n    state.dse.thProp = "SSE";\n    state.dse.th_prop = "SSE";\n    syncFormFromState();\n\n    renderPlatform();',
     'demo synchronizes stable DSE configuration'
+  );
+
+  source = replaceOnce(
+    source,
+    '      state.applications = snapshot.applications || [];',
+    '      state.applications = (snapshot.applications || []).map((app, appIndex) => ({\n        ...app,\n        name: app?.name || `App${appIndex + 1}`,\n        actors: (app?.actors || []).map((actor, actorIndex) => typeof actor === "string"\n          ? { name: actor, type: actor, ports: [{ name: "p_in", type: "in", rate: 1 }, { name: "p_out", type: "out", rate: 1 }] }\n          : { ...actor, name: actor?.name || actor?.type || `actor_${actorIndex}`, type: actor?.type || actor?.name || `actor_${actorIndex}` })\n      }));',
+    'migrate legacy string actors from local storage'
   );
 
   source = replaceOnce(
