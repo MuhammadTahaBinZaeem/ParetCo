@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wcets>
+  <mapping task_type="image_source">
+    <wcet processor="ARM_CortexA7" mode="default" wcet="15"/>
+    <wcet processor="ARM_CortexA7" mode="low_power" wcet="30"/>
+  </mapping>
+  <mapping task_type="filter_gx">
+    <wcet processor="ARM_CortexA7" mode="default" wcet="40"/>
+    <wcet processor="ARM_CortexA7" mode="low_power" wcet="80"/>
+  </mapping>
+  <mapping task_type="filter_gy">
+    <wcet processor="ARM_CortexA7" mode="default" wcet="40"/>
+    <wcet processor="ARM_CortexA7" mode="low_power" wcet="80"/>
+  </mapping>
+  <mapping task_type="calc_magnitude">
+    <wcet processor="ARM_CortexA7" mode="default" wcet="20"/>
+    <wcet processor="ARM_CortexA7" mode="low_power" wcet="40"/>
+  </mapping>
+  <mapping task_type="display_sink">
+    <wcet processor="ARM_CortexA7" mode="default" wcet="10"/>
+    <wcet processor="ARM_CortexA7" mode="low_power" wcet="20"/>
+  </mapping>
+</wcets>
